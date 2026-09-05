@@ -54,6 +54,13 @@ jobs:
           python3 -m py_compile scripts/lib/lam_config_json.py
           ./tests/lam-config-json.sh
 
+      - name: Grafana provisioning permissions contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tests/grafana-provisioning-permissions.sh
+          ./tests/grafana-provisioning-permissions.sh
+
       - name: Ensure LF shell scripts
         shell: bash
         run: |

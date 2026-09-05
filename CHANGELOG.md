@@ -2,6 +2,14 @@
 
 Este projeto está em fase pré-1.0. Installer e upgrader possuem versões independentes.
 
+## Installer 0.6.4 — 2026-09-05
+
+### Fixed
+- corrige permissões do datasource do Grafana criado pelo instalador com `umask 027`;
+- garante `root:grafana`, diretórios `0750` e `prometheus.yml` `0640`, permitindo que o serviço leia o provisioning sem abrir permissões para outros usuários;
+- valida a leitura do datasource como usuário `grafana` antes de iniciar o serviço;
+- mantém `STATE_FORMAT_VERSION=3`, permitindo retomar instalações 0.6.3 interrompidas na etapa de monitoramento.
+
 ## Installer 0.6.3 — 2026-09-05
 
 ### Fixed
