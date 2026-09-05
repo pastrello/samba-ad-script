@@ -37,7 +37,7 @@ LAM_SHA256="${LAM_SHA256:-}"
 LAM_FALLBACK_SHA256="${LAM_FALLBACK_SHA256:-}"
 LAM_EFFECTIVE_SHA256=""
 
-INSTALLER_REVISION="${INSTALLER_REVISION:-0.6.4}"
+INSTALLER_REVISION="${INSTALLER_REVISION:-0.6.5}"
 STATE_FORMAT_VERSION="3"
 INSTALLER_SELF_SHA256=""
 INSTALLER_COMMON_SHA256=""
@@ -1192,6 +1192,27 @@ EOF
 # ---------------------------------------------------------------------------
 
 
+find_grafana_binary() {
+    local resolved="" candidate
+
+    if resolved="$(command -v grafana 2>/dev/null)" && [[ -n "$resolved" && -x "$resolved" ]]; then
+        printf '%s\n' "$resolved"
+        return 0
+    fi
+
+    # Pacotes oficiais DEB/RPM atuais instalam o binário principal aqui.
+    # Mantemos /usr/bin/grafana como fallback para layouts que forneçam symlink.
+    for candidate in /usr/share/grafana/bin/grafana /usr/bin/grafana; do
+        if [[ -x "$candidate" ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+
 install_monitoring() {
     info "Instalando Prometheus e node_exporter"
     distro_install_monitoring_packages
@@ -1326,8 +1347,13 @@ EOF
     curl -fsS --cacert "$grafana_cert" --resolve "${fqdn}:3000:127.0.0.1" \
         "https://${fqdn}:3000/api/health" >/dev/null || die "Grafana HTTPS não respondeu ao health check."
 
+    local grafana_bin
+    if ! grafana_bin="$(find_grafana_binary)"; then
+        die "Binário principal do Grafana não encontrado após a instalação."
+    fi
+
     printf '%s\n' "$GRAFANA_ADMIN_PASSWORD" | \
-        /usr/bin/grafana cli --homepath /usr/share/grafana --config /etc/grafana/grafana.ini \
+        "$grafana_bin" cli --homepath /usr/share/grafana --config /etc/grafana/grafana.ini \
         admin reset-admin-password --password-from-stdin >/dev/null
 
     if (( generated_grafana_password == 1 )); then

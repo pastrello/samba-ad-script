@@ -2,6 +2,15 @@
 
 Este projeto está em fase pré-1.0. Installer e upgrader possuem versões independentes.
 
+## Installer 0.6.5 — 2026-09-05
+
+### Fixed
+- remove o caminho fixo `/usr/bin/grafana` usado para resetar a senha administrativa;
+- detecta o binário principal do Grafana pelo `PATH` e pelo layout atual de pacotes em `/usr/share/grafana/bin/grafana`;
+- mantém `grafana cli ... --password-from-stdin`, sem expor a senha na linha de comando;
+- adiciona teste de regressão para impedir retorno do caminho fixo;
+- mantém `STATE_FORMAT_VERSION=3`, permitindo retomar instalações 0.6.4 interrompidas na etapa de monitoramento.
+
 ## Installer 0.6.4 — 2026-09-05
 
 ### Fixed
