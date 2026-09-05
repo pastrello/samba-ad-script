@@ -1,0 +1,50 @@
+name: Apply installer 0.6.4 Grafana permissions fix
+
+on:
+  push:
+    branches:
+      - fix/grafana-provisioning-permissions-0.6.4
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply patch helper
+        run: python3 tools/apply_grafana_permissions_064.py
+
+      - name: Validate patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tests/grafana-provisioning-permissions.sh
+          bash -n scripts/install.sh
+          bash -n scripts/lib/common.sh
+          bash -n scripts/lib/distro-rocky.sh
+          bash -n scripts/lib/distro-ubuntu.sh
+          bash -n tests/grafana-provisioning-permissions.sh
+          ./tests/platform-detection.sh
+          ./tests/ubuntu-resolver-contract.sh
+          ./tests/pipefail-safety.sh
+          ./tests/lam-config-json.sh
+          ./tests/grafana-provisioning-permissions.sh
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/install.sh scripts/lib/common.sh CHANGELOG.md tests/grafana-provisioning-permissions.sh .github/workflows/validate.yml
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "fix: make Grafana datasource readable by service"
+          git push
