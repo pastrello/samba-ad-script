@@ -2,6 +2,15 @@
 
 Este projeto está em fase pré-1.0. Installer e upgrader possuem versões independentes.
 
+## Installer 0.6.2 — 2026-09-05
+
+### Fixed
+- corrige `SIGPIPE`/exit 141 ao iniciar `samba_provision` com `set -o pipefail`;
+- centraliza a leitura de `smbd -b` em `samba_build_option()`, sem pipeline com consumidor que encerra cedo;
+- corrige o mesmo padrão latente nas rotinas de TLS, logrotate e health-check;
+- mantém compatibilidade com checkpoint v3, permitindo retomar uma instalação 0.6/0.6.1 que já concluiu o build do Samba;
+- adiciona teste de regressão contra consumidores que encerram cedo (`awk ... exit`, `head`, `grep -m`) após `smbd -b`.
+
 ## Installer 0.6.1 — 2026-09-05
 
 ### Fixed

@@ -39,6 +39,13 @@ jobs:
           chmod +x tests/ubuntu-resolver-contract.sh
           ./tests/ubuntu-resolver-contract.sh
 
+      - name: Pipefail safety contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tests/pipefail-safety.sh
+          ./tests/pipefail-safety.sh
+
       - name: Ensure LF shell scripts
         shell: bash
         run: |
