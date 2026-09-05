@@ -168,39 +168,131 @@ distro_check_conflicting_samba_packages() {
     done
 }
 
+ubuntu_port53_listeners() {
+    ss -H -lntup 2>/dev/null | awk '$5 ~ /:53$/ {print}' || true
+}
+
+ubuntu_resolved_port53_listeners() {
+    ubuntu_port53_listeners | grep -E 'systemd-resolv' || true
+}
+
+ubuntu_write_resolv_conf() {
+    local dns_server="$1"
+    local search_domain="${2:-}"
+
+    rm -f /etc/resolv.conf
+    {
+        if [[ -n "$search_domain" ]]; then
+            printf 'search %s
+' "$search_domain"
+        fi
+        printf 'nameserver %s
+' "$dns_server"
+    } >/etc/resolv.conf
+    chmod 644 /etc/resolv.conf
+}
+
+ubuntu_resolved_is_masked() {
+    [[ "$(systemctl is-enabled systemd-resolved.service 2>/dev/null || true)" == "masked" ]]
+}
+
+ubuntu_disable_systemd_resolved_for_dc() {
+    local dns_server="$1"
+    local search_domain="${2:-}"
+    local listeners
+
+    warn "systemd-resolved continuou ocupando a porta 53; aplicando fallback controlado para DC dedicado."
+    warn "O serviço será parado e mascarado; /etc/resolv.conf ficará sob controle do samba-ad-script."
+
+    mkdir -p /etc/samba-ad
+
+    if ! systemctl mask --now systemd-resolved.service >/dev/null 2>&1; then
+        systemctl stop systemd-resolved.service 2>/dev/null || true
+        systemctl disable systemd-resolved.service >/dev/null 2>&1 || true
+        systemctl mask systemd-resolved.service >/dev/null 2>&1 || \
+            die "Não foi possível mascarar systemd-resolved."
+    fi
+
+    sleep 1
+    listeners="$(ubuntu_port53_listeners)"
+    if [[ -n "$listeners" ]]; then
+        printf '%s
+' "$listeners" >&2
+        die "A porta 53 continua ocupada após parar systemd-resolved."
+    fi
+
+    ubuntu_write_resolv_conf "$dns_server" "$search_domain"
+    printf '%s
+' "$(date -Is)" >/etc/samba-ad/systemd-resolved.disabled-by-samba-ad-script
+    chmod 600 /etc/samba-ad/systemd-resolved.disabled-by-samba-ad-script
+    ok "systemd-resolved desativado de forma controlada; porta 53 liberada para o Samba."
+}
+
 distro_prepare_dns_port() {
     info "Preparando porta 53 no Ubuntu"
 
+    if [[ ! -e /etc/resolv.conf.pre-samba-ad ]]; then
+        cp -a /etc/resolv.conf /etc/resolv.conf.pre-samba-ad 2>/dev/null || true
+    fi
+
+    if ubuntu_resolved_is_masked; then
+        warn "systemd-resolved já está mascarado; usando resolver estático durante o provisionamento."
+        ubuntu_write_resolv_conf "$DNS_FORWARDER"
+        local preexisting
+        preexisting="$(ubuntu_port53_listeners)"
+        if [[ -n "$preexisting" ]]; then
+            printf '%s
+' "$preexisting" >&2
+            die "Porta 53 ocupada por outro serviço antes do provisionamento."
+        fi
+        return 0
+    fi
+
     if systemctl cat systemd-resolved.service >/dev/null 2>&1; then
         mkdir -p /etc/systemd/resolved.conf.d
-        cat >/etc/systemd/resolved.conf.d/60-samba-ad.conf <<EOF
+        rm -f /etc/systemd/resolved.conf.d/60-samba-ad.conf
+        cat >/etc/systemd/resolved.conf.d/99-samba-ad.conf <<EOF
 [Resolve]
 DNS=${DNS_FORWARDER}
 DNSStubListener=no
+DNSStubListenerExtra=
 EOF
-
-        if [[ ! -e /etc/resolv.conf.pre-samba-ad ]]; then
-            cp -a /etc/resolv.conf /etc/resolv.conf.pre-samba-ad 2>/dev/null || true
-        fi
 
         systemctl enable --now systemd-resolved.service 2>/dev/null || true
         systemctl restart systemd-resolved.service
 
-        # O stub 127.0.0.53 deixa de escutar para liberar TCP/UDP 53 ao Samba.
-        # Durante o build/provisionamento, consultas vão diretamente ao forwarder.
-        rm -f /etc/resolv.conf
-        cat >/etc/resolv.conf <<EOF
-nameserver ${DNS_FORWARDER}
-EOF
-        chmod 644 /etc/resolv.conf
-
+        # Durante build/provisionamento, consultas devem ir diretamente ao forwarder.
+        ubuntu_write_resolv_conf "$DNS_FORWARDER"
         sleep 1
-        if ss -H -lntup 2>/dev/null | grep -E '127\.0\.0\.(53|54):53([[:space:]]|$)' >/dev/null; then
-            die "systemd-resolved ainda mantém o stub DNS na porta 53 após DNSStubListener=no."
+
+        local listeners other
+        listeners="$(ubuntu_port53_listeners)"
+        if [[ -z "$listeners" ]]; then
+            ok "Stub DNS do systemd-resolved desativado; porta 53 liberada para o Samba."
+            return 0
         fi
-        ok "Stub DNS do systemd-resolved desativado; porta 53 liberada para o Samba."
+
+        other="$(printf '%s
+' "$listeners" | grep -Ev 'systemd-resolv' || true)"
+        if [[ -n "$other" ]]; then
+            printf '%s
+' "$listeners" >&2
+            die "Porta 53 está ocupada por serviço diferente de systemd-resolved."
+        fi
+
+        warn "A configuração efetiva ainda deixou systemd-resolved na porta 53."
+        systemd-analyze cat-config systemd/resolved.conf 2>/dev/null | tail -n 120 || true
+        ubuntu_disable_systemd_resolved_for_dc "$DNS_FORWARDER"
     else
-        warn "systemd-resolved não foi detectado; o instalador apenas manterá /etc/resolv.conf sob controle local."
+        warn "systemd-resolved não foi detectado; usando /etc/resolv.conf estático."
+        ubuntu_write_resolv_conf "$DNS_FORWARDER"
+        local listeners
+        listeners="$(ubuntu_port53_listeners)"
+        if [[ -n "$listeners" ]]; then
+            printf '%s
+' "$listeners" >&2
+            die "Porta 53 já está ocupada antes do provisionamento."
+        fi
     fi
 }
 
@@ -210,26 +302,29 @@ distro_enable_network_wait() {
 }
 
 distro_configure_resolver_to_self() {
-    if systemctl cat systemd-resolved.service >/dev/null 2>&1; then
+    if systemctl is-active --quiet systemd-resolved.service 2>/dev/null; then
         mkdir -p /etc/systemd/resolved.conf.d
-        cat >/etc/systemd/resolved.conf.d/60-samba-ad.conf <<EOF
+        rm -f /etc/systemd/resolved.conf.d/60-samba-ad.conf
+        cat >/etc/systemd/resolved.conf.d/99-samba-ad.conf <<EOF
 [Resolve]
 DNS=${DC_IP}
 Domains=${AD_DNS_DOMAIN}
 DNSStubListener=no
+DNSStubListenerExtra=
 EOF
         systemctl restart systemd-resolved.service
         resolvectl flush-caches 2>/dev/null || true
+        sleep 1
+
+        if [[ -n "$(ubuntu_resolved_port53_listeners)" ]]; then
+            warn "systemd-resolved voltou a ocupar a porta 53 após configurar o DC como DNS."
+            ubuntu_disable_systemd_resolved_for_dc "$DC_IP" "$AD_DNS_DOMAIN"
+        fi
     fi
 
-    rm -f /etc/resolv.conf
-    cat >/etc/resolv.conf <<EOF
-search ${AD_DNS_DOMAIN}
-nameserver ${DC_IP}
-EOF
-    chmod 644 /etc/resolv.conf
+    ubuntu_write_resolv_conf "$DC_IP" "$AD_DNS_DOMAIN"
 
-    if ! grep -Eq "^nameserver[[:space:]]+${DC_IP//./\\.}([[:space:]]|$)" /etc/resolv.conf; then
+    if ! grep -Eq "^nameserver[[:space:]]+${DC_IP//./\.}([[:space:]]|$)" /etc/resolv.conf; then
         die "/etc/resolv.conf não aponta para o próprio DC após a configuração."
     fi
 }
@@ -440,25 +535,42 @@ distro_prepare_grafana_tls_files() {
 }
 
 distro_run_extra_tests() {
-    if systemctl is-active --quiet systemd-resolved.service 2>/dev/null; then
-        if ss -H -lntup 2>/dev/null | grep -E '127\.0\.0\.(53|54):53([[:space:]]|$)' >/dev/null; then
-            die "O stub DNS do systemd-resolved voltou a ocupar a porta 53."
-        fi
+    local resolved_listeners
+    resolved_listeners="$(ubuntu_resolved_port53_listeners)"
+    if [[ -n "$resolved_listeners" ]]; then
+        printf '%s
+' "$resolved_listeners" >&2
+        die "systemd-resolved está ocupando a porta 53 após o provisionamento."
+    fi
+
+    if ubuntu_resolved_is_masked; then
+        systemctl is-active --quiet systemd-resolved.service 2>/dev/null && \
+            die "systemd-resolved está ativo apesar de estar mascarado."
+        ok "Fallback Ubuntu ativo: systemd-resolved mascarado e fora da porta 53."
+    else
         ok "systemd-resolved permanece sem stub na porta 53."
     fi
 }
 
 distro_security_summary() {
     local aa="desconhecido"
+    local resolver_status
     if systemctl is-active --quiet apparmor.service 2>/dev/null; then
         aa="ativo"
     fi
+
+    if ubuntu_resolved_is_masked; then
+        resolver_status="systemd-resolved mascarado pelo fallback controlado; resolver estático"
+    else
+        resolver_status="systemd-resolved ativo com DNS stub desativado"
+    fi
+
     cat <<EOF
 AppArmor:
   O instalador NÃO desativa AppArmor. Estado atual: ${aa}
 
 Resolver Ubuntu:
-  systemd-resolved permanece instalado, mas o DNSStubListener é desativado
-  para liberar a porta 53 ao Samba. /etc/resolv.conf aponta para ${DC_IP}.
+  ${resolver_status}.
+  /etc/resolv.conf aponta para ${DC_IP}.
 EOF
 }
