@@ -1,0 +1,48 @@
+name: Assemble staged scripts
+
+on:
+  push:
+    branches: ["initial-project-structure"]
+    paths:
+      - ".bootstrap/**"
+      - ".github/workflows/assemble-scripts.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Rebuild scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p scripts
+          cat .bootstrap/install.part.* | base64 -d | gzip -d > scripts/install.sh
+          cat .bootstrap/upgrade.part.* | base64 -d | gzip -d > scripts/upgrade.sh
+          chmod +x scripts/install.sh scripts/upgrade.sh
+
+          echo "bc9e7053431bb171d404e9525aaeec3fc37330aefb0e3d8f3ac253f5857298a6  scripts/install.sh" | sha256sum -c -
+          echo "e11bcaafefbd73d83f78321566c58793a1a1df27550620a342852990ace6b4d4  scripts/upgrade.sh" | sha256sum -c -
+
+          bash -n scripts/install.sh
+          bash -n scripts/upgrade.sh
+
+      - name: Commit canonical scripts and remove staging files
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .bootstrap
+          rm -f .github/workflows/assemble-scripts.yml
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: add installer and upgrader scripts"
+          git push origin HEAD:initial-project-structure
