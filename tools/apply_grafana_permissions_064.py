@@ -101,8 +101,6 @@ for needle in "${required[@]}"; do
     }
 done
 
-# Evita a regressão que causou o incidente: criar o YAML e iniciar o serviço
-# sem ajustar ownership/permissões no bloco intermediário.
 python3 - "$common" <<'PY'
 from pathlib import Path
 import sys
@@ -117,20 +115,3 @@ PY
 
 echo "[OK] Grafana provisioning permissions contract validated"
 ''')
-
-p = Path('.github/workflows/validate.yml')
-s = p.read_text()
-needle = '''      - name: Ensure LF shell scripts\n'''
-insert = '''      - name: Grafana provisioning permissions contract
-        shell: bash
-        run: |
-          set -euo pipefail
-          chmod +x tests/grafana-provisioning-permissions.sh
-          ./tests/grafana-provisioning-permissions.sh
-
-'''
-if insert not in s:
-    if needle not in s:
-        raise SystemExit('CI insertion marker not found')
-    s = s.replace(needle, insert + needle, 1)
-p.write_text(s)
