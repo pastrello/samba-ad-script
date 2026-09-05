@@ -1,0 +1,52 @@
+name: Bug report
+description: Relate um problema reproduzível no instalador ou atualizador.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Não publique senhas, chaves privadas, `sam.ldb` ou dados sensíveis de um domínio real.
+  - type: input
+    id: rocky
+    attributes:
+      label: Rocky Linux
+      placeholder: "10.x"
+    validations:
+      required: true
+  - type: input
+    id: samba
+    attributes:
+      label: Samba
+      placeholder: "4.24.5"
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Componente
+      options:
+        - install.sh
+        - upgrade.sh
+        - documentação
+        - outro
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportamento esperado
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: O que aconteceu
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs sanitizados
+      description: Remova credenciais, domínios/IPs privados sensíveis e chaves.
+      render: shell

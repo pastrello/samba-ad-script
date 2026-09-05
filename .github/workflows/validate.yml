@@ -1,0 +1,33 @@
+name: Validate Bash
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Bash syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/install.sh
+          bash -n scripts/upgrade.sh
+
+      - name: Ensure LF shell scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -Il $'\r' scripts/*.sh; then
+            echo "CRLF detected in shell scripts"
+            exit 1
+          fi
