@@ -53,12 +53,13 @@ jobs:
           for old, new in replacements.items():
               s = s.replace(old, new)
 
-          if '| awk -F\': \' \'/CONFIGFILE:/ {print $2; exit}\'' in s:
-              raise SystemExit('CONFIGFILE early-exit pipeline remains')
-          if '| awk -F\': \' \'/PRIVATE_DIR:/ {print $2; exit}\'' in s:
-              raise SystemExit('PRIVATE_DIR early-exit pipeline remains')
-          if '| awk -F\': \' \'/LOGFILEBASE:/ {print $2; exit}\'' in s:
-              raise SystemExit('LOGFILEBASE early-exit pipeline remains')
+          for needle in (
+              '| awk -F\': \' \'/CONFIGFILE:/ {print $2; exit}\'',
+              '| awk -F\': \' \'/PRIVATE_DIR:/ {print $2; exit}\'',
+              '| awk -F\': \' \'/LOGFILEBASE:/ {print $2; exit}\'',
+          ):
+              if needle in s:
+                  raise SystemExit(f'early-exit smbd pipeline remains: {needle}')
 
           s = s.replace('INSTALLER_REVISION="${INSTALLER_REVISION:-0.6.1}"', 'INSTALLER_REVISION="${INSTALLER_REVISION:-0.6.2}"', 1)
           p.write_text(s)
@@ -71,71 +72,40 @@ jobs:
 
           p = Path('CHANGELOG.md')
           s = p.read_text()
-          entry = '\n'.join([
-              '## Installer 0.6.2 — 2026-09-05',
-              '',
-              '### Fixed',
-              '- corrige `SIGPIPE`/exit 141 ao iniciar `samba_provision` com `set -o pipefail`;',
-              '- centraliza a leitura de `smbd -b` em `samba_build_option()`, sem pipeline com consumidor que encerra cedo;',
-              '- corrige o mesmo padrão latente nas rotinas de TLS, logrotate e health-check;',
-              '- mantém compatibilidade com checkpoint v3, permitindo retomar uma instalação 0.6/0.6.1 que já concluiu o build do Samba;',
-              '- adiciona teste de regressão contra consumidores que encerram cedo (`awk ... exit`, `head`, `grep -m`) após `smbd -b`.',
-              '',
-              ''
-          ])
-          marker = '## Installer 0.6.1 — 2026-09-05\n'
           if '## Installer 0.6.2 — 2026-09-05' not in s:
+              entry = '''## Installer 0.6.2 — 2026-09-05
+
+### Fixed
+- corrige `SIGPIPE`/exit 141 ao iniciar `samba_provision` com `set -o pipefail`;
+- centraliza a leitura de `smbd -b` em `samba_build_option()`, sem pipeline com consumidor que encerra cedo;
+- corrige o mesmo padrão latente nas rotinas de TLS, logrotate e health-check;
+- mantém compatibilidade com checkpoint v3, permitindo retomar uma instalação 0.6/0.6.1 que já concluiu o build do Samba;
+- adiciona teste de regressão contra consumidores que encerram cedo (`awk ... exit`, `head`, `grep -m`) após `smbd -b`.
+
+'''
+              marker = '## Installer 0.6.1 — 2026-09-05\n'
               if marker not in s:
                   raise SystemExit('changelog marker not found')
               s = s.replace(marker, entry + marker, 1)
           p.write_text(s)
 
-          test_lines = [
-              '#!/usr/bin/env bash',
-              'set -Eeuo pipefail',
-              '',
-              'f="scripts/lib/common.sh"',
-              '',
-              'if grep -nE "smbd.*-b.*\\|.*(awk.*exit|head([[:space:]]|$)|grep[[:space:]]+-m)" "$f"; then',
-              '    echo "[ERRO] consumidor que encerra cedo após smbd -b voltou ao código" >&2',
-              '    exit 1',
-              'fi',
-              '',
-              'grep -q "samba_build_option()" "$f"',
-              'grep -q "samba_build_option CONFIGFILE" "$f"',
-              'grep -q "samba_build_option PRIVATE_DIR" "$f"',
-              'grep -q "samba_build_option LOGFILEBASE" "$f"',
-              '',
-              'set +e',
-              'bash -o pipefail -c \'yes x | awk "NR==1 {print; exit}" >/dev/null\'',
-              'rc=$?',
-              'set -e',
-              'if [[ "$rc" -ne 141 ]]; then',
-              '    echo "[AVISO] pipeline demo returned $rc instead of 141 on this runner"',
-              'fi',
-              '',
-              'echo "[OK] pipefail/SIGPIPE regression contract validated"',
-              ''
-          ]
-          Path('tests/pipefail-safety.sh').write_text('\n'.join(test_lines))
+          Path('tests/pipefail-safety.sh').write_text('''#!/usr/bin/env bash
+set -Eeuo pipefail
 
-          p = Path('.github/workflows/validate.yml')
-          s = p.read_text()
-          needle = '      - name: Ensure LF shell scripts\n'
-          step = '\n'.join([
-              '      - name: Pipefail safety contract',
-              '        shell: bash',
-              '        run: |',
-              '          set -euo pipefail',
-              '          chmod +x tests/pipefail-safety.sh',
-              '          ./tests/pipefail-safety.sh',
-              '',
-          ])
-          if 'Pipefail safety contract' not in s:
-              if needle not in s:
-                  raise SystemExit('validate workflow insertion point not found')
-              s = s.replace(needle, step + needle, 1)
-          p.write_text(s)
+f="scripts/lib/common.sh"
+
+if grep -nE "smbd.*-b.*\\|.*(awk.*exit|head([[:space:]]|$)|grep[[:space:]]+-m)" "$f"; then
+    echo "[ERRO] consumidor que encerra cedo após smbd -b voltou ao código" >&2
+    exit 1
+fi
+
+grep -q "samba_build_option()" "$f"
+grep -q "samba_build_option CONFIGFILE" "$f"
+grep -q "samba_build_option PRIVATE_DIR" "$f"
+grep -q "samba_build_option LOGFILEBASE" "$f"
+
+echo "[OK] pipefail/SIGPIPE regression contract validated"
+''')
           PY
 
           chmod +x tests/pipefail-safety.sh
@@ -147,16 +117,13 @@ jobs:
           ./tests/platform-detection.sh
           ./tests/pipefail-safety.sh
 
-          echo '=== Potential early-consumer pipelines (review only) ==='
-          grep -R -nE '\|[[:space:]]*(head([[:space:]]|$)|grep[[:space:]]+-m)|awk[^|]*\{[^}]*exit' scripts || true
-
       - name: Commit fix
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scripts/install.sh scripts/lib/common.sh CHANGELOG.md tests/pipefail-safety.sh .github/workflows/validate.yml
+          git add scripts/install.sh scripts/lib/common.sh CHANGELOG.md tests/pipefail-safety.sh
           if git diff --cached --quiet; then
             echo 'No changes to commit'
             exit 0
