@@ -22,38 +22,31 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           p = Path('scripts/lib/common.sh')
           s = p.read_text()
-          old = '''    local smb_conf
-              local private_dir
-              local samdb
-
-              smb_conf="$("${SAMBA_PREFIX}/sbin/smbd" -b | awk -F': ' '/CONFIGFILE:/ {print $2; exit}')"
-              private_dir="$("${SAMBA_PREFIX}/sbin/smbd" -b | awk -F': ' '/PRIVATE_DIR:/ {print $2; exit}')"
-          '''
-          # indentation in source is four spaces; use a normalized exact block instead
-          old = '''    local smb_conf
-    local private_dir
-    local samdb
-
-    smb_conf="$("${SAMBA_PREFIX}/sbin/smbd" -b | awk -F': ' '/CONFIGFILE:/ {print $2; exit}')"
-    private_dir="$("${SAMBA_PREFIX}/sbin/smbd" -b | awk -F': ' '/PRIVATE_DIR:/ {print $2; exit}')"
-'''
-          new = '''    local smb_conf
-    local private_dir
-    local samdb
-    local smbd_build_info
-
-    # Capture once.  Do not pipe smbd -b into an early-exiting consumer while
-    # pipefail is enabled: the producer may receive SIGPIPE and return 141.
-    smbd_build_info="$("${SAMBA_PREFIX}/sbin/smbd" -b)"
-    smb_conf="$(awk -F': ' '/^[[:space:]]*CONFIGFILE:/ {print $2}' <<<"$smbd_build_info")"
-    private_dir="$(awk -F': ' '/^[[:space:]]*PRIVATE_DIR:/ {print $2}' <<<"$smbd_build_info")"
-'''
-          if old not in s:
+          pattern = re.compile(
+              r'(?m)^    local smb_conf\n'
+              r'    local private_dir\n'
+              r'    local samdb\n\n'
+              r'    smb_conf=.*?CONFIGFILE:.*?exit.*?\n'
+              r'    private_dir=.*?PRIVATE_DIR:.*?exit.*?\n'
+          )
+          replacement = (
+              '    local smb_conf\n'
+              '    local private_dir\n'
+              '    local samdb\n'
+              '    local smbd_build_info\n\n'
+              '    # Capture once. Do not pipe smbd -b into an early-exiting consumer while\n'
+              '    # pipefail is enabled: the producer may receive SIGPIPE and return 141.\n'
+              '    smbd_build_info="$("${SAMBA_PREFIX}/sbin/smbd" -b)"\n'
+              '    smb_conf="$(awk -F\': \' \'/^[[:space:]]*CONFIGFILE:/ {print $2}\' <<<"$smbd_build_info")"\n'
+              '    private_dir="$(awk -F\': \' \'/^[[:space:]]*PRIVATE_DIR:/ {print $2}\' <<<"$smbd_build_info")"\n'
+          )
+          s, n = pattern.subn(replacement, s, count=1)
+          if n != 1:
               raise SystemExit('expected provision discovery block not found')
-          s = s.replace(old, new, 1)
           s = s.replace('INSTALLER_REVISION="${INSTALLER_REVISION:-0.6.1}"', 'INSTALLER_REVISION="${INSTALLER_REVISION:-0.6.2}"', 1)
           p.write_text(s)
 
@@ -65,71 +58,71 @@ jobs:
 
           p = Path('CHANGELOG.md')
           s = p.read_text()
-          entry = '''## Installer 0.6.2 — 2026-09-05
-
-### Fixed
-- corrige `SIGPIPE`/exit 141 ao iniciar `samba_provision` com `set -o pipefail`;
-- `smbd -b` agora é capturado uma única vez e `CONFIGFILE`/`PRIVATE_DIR` são extraídos do texto em memória, sem pipeline com consumidor que encerra cedo;
-- mantém compatibilidade com checkpoint v3, permitindo retomar uma instalação 0.6/0.6.1 que já concluiu o build do Samba;
-- adiciona teste de regressão para impedir a volta do padrão `smbd -b | awk ... exit`.
-
-'''
+          entry = '\n'.join([
+              '## Installer 0.6.2 — 2026-09-05',
+              '',
+              '### Fixed',
+              '- corrige `SIGPIPE`/exit 141 ao iniciar `samba_provision` com `set -o pipefail`;',
+              '- `smbd -b` agora é capturado uma única vez e `CONFIGFILE`/`PRIVATE_DIR` são extraídos do texto em memória, sem pipeline com consumidor que encerra cedo;',
+              '- mantém compatibilidade com checkpoint v3, permitindo retomar uma instalação 0.6/0.6.1 que já concluiu o build do Samba;',
+              '- adiciona teste de regressão para impedir a volta do padrão `smbd -b | awk ... exit`.',
+              '',
+              ''
+          ])
           marker = '## Installer 0.6.1 — 2026-09-05\n'
           if marker not in s:
               raise SystemExit('changelog marker not found')
           p.write_text(s.replace(marker, entry + marker, 1))
 
-          Path('tests/pipefail-safety.sh').write_text(r'''#!/usr/bin/env bash
-          set -Eeuo pipefail
-
-          f="scripts/lib/common.sh"
-
-          if grep -nE 'smbd[^\n]*-b[^\n]*\|[^\n]*awk[^\n]*exit' "$f"; then
-              echo '[ERRO] padrão smbd -b | awk ... exit voltou ao código' >&2
-              exit 1
-          fi
-
-          grep -q 'local smbd_build_info' "$f"
-          grep -q 'smbd_build_info=.*smbd.*-b' "$f"
-          grep -q 'CONFIGFILE:/' "$f"
-          grep -q 'PRIVATE_DIR:/' "$f"
-
-          # Demonstrate why the previous pattern is unsafe with pipefail.
-          set +e
-          bash -o pipefail -c 'yes x | awk "NR==1 {print; exit}" >/dev/null'
-          rc=$?
-          set -e
-          if [[ "$rc" -ne 141 ]]; then
-              echo "[AVISO] pipeline demo returned $rc instead of 141 on this runner"
-          fi
-
-          echo '[OK] pipefail/SIGPIPE regression contract validated'
-          ''')
+          test_lines = [
+              '#!/usr/bin/env bash',
+              'set -Eeuo pipefail',
+              '',
+              'f="scripts/lib/common.sh"',
+              '',
+              'if grep -nE "smbd.*-b.*\\|.*awk.*exit" "$f"; then',
+              '    echo "[ERRO] padrão smbd -b | awk ... exit voltou ao código" >&2',
+              '    exit 1',
+              'fi',
+              '',
+              'grep -q "local smbd_build_info" "$f"',
+              'grep -q "smbd_build_info=.*smbd.*-b" "$f"',
+              'grep -q "CONFIGFILE:/" "$f"',
+              'grep -q "PRIVATE_DIR:/" "$f"',
+              '',
+              'set +e',
+              'bash -o pipefail -c \'yes x | awk "NR==1 {print; exit}" >/dev/null\'',
+              'rc=$?',
+              'set -e',
+              'if [[ "$rc" -ne 141 ]]; then',
+              '    echo "[AVISO] pipeline demo returned $rc instead of 141 on this runner"',
+              'fi',
+              '',
+              'echo "[OK] pipefail/SIGPIPE regression contract validated"',
+              ''
+          ]
+          Path('tests/pipefail-safety.sh').write_text('\n'.join(test_lines))
 
           p = Path('.github/workflows/validate.yml')
           s = p.read_text()
-          needle = '''      - name: Platform adapter contract
-        shell: bash
-        run: |
-          set -euo pipefail
-          chmod +x tests/platform-detection.sh
-          ./tests/platform-detection.sh
-'''
-          replacement = needle + '''
-      - name: Pipefail safety contract
-        shell: bash
-        run: |
-          set -euo pipefail
-          chmod +x tests/pipefail-safety.sh
-          ./tests/pipefail-safety.sh
-'''
-          if needle not in s:
-              raise SystemExit('validate workflow insertion point not found')
-          p.write_text(s.replace(needle, replacement, 1))
+          needle = '      - name: Ensure LF shell scripts\n'
+          step = '\n'.join([
+              '      - name: Pipefail safety contract',
+              '        shell: bash',
+              '        run: |',
+              '          set -euo pipefail',
+              '          chmod +x tests/pipefail-safety.sh',
+              '          ./tests/pipefail-safety.sh',
+              '',
+          ])
+          if 'Pipefail safety contract' not in s:
+              if needle not in s:
+                  raise SystemExit('validate workflow insertion point not found')
+              s = s.replace(needle, step + needle, 1)
+          p.write_text(s)
           PY
 
           chmod +x tests/pipefail-safety.sh
-
           bash -n scripts/install.sh
           bash -n scripts/lib/common.sh
           bash -n scripts/lib/distro-rocky.sh
