@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Samba AD Script - installer 0.6.4
+# Samba AD Script - installer 0.6.5
 #
 # Supported:
 #   - Rocky Linux 10.x
@@ -13,7 +13,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 
-INSTALLER_REVISION="0.6.4"
+INSTALLER_REVISION="0.6.5"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="${SCRIPT_DIR}/lib"
 
