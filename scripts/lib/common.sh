@@ -37,7 +37,7 @@ LAM_SHA256="${LAM_SHA256:-}"
 LAM_FALLBACK_SHA256="${LAM_FALLBACK_SHA256:-}"
 LAM_EFFECTIVE_SHA256=""
 
-INSTALLER_REVISION="${INSTALLER_REVISION:-0.6.3}"
+INSTALLER_REVISION="${INSTALLER_REVISION:-0.6.4}"
 STATE_FORMAT_VERSION="3"
 INSTALLER_SELF_SHA256=""
 INSTALLER_COMMON_SHA256=""
@@ -1264,6 +1264,18 @@ datasources:
     isDefault: true
     editable: true
 EOF
+
+    # O instalador roda com umask 027. Sem ownership explícito, arquivos e
+    # diretórios de provisioning criados aqui podem ficar root:root e o usuário
+    # grafana não consegue atravessar/ler prometheus.yml, entrando em restart loop.
+    chown root:grafana /etc/grafana/provisioning /etc/grafana/provisioning/datasources
+    chmod 750 /etc/grafana/provisioning /etc/grafana/provisioning/datasources
+    chown root:grafana /etc/grafana/provisioning/datasources/prometheus.yml
+    chmod 640 /etc/grafana/provisioning/datasources/prometheus.yml
+
+    if command -v runuser >/dev/null 2>&1; then
+        runuser -u grafana -- test -r /etc/grafana/provisioning/datasources/prometheus.yml ||             die "Usuário grafana não consegue ler o datasource provisionado."
+    fi
 
     local fqdn="${HOSTNAME_SHORT}.${AD_DNS_DOMAIN}"
     local grafana_cert="/etc/grafana/samba-ad-admin.crt"
