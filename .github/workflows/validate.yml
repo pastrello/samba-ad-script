@@ -46,6 +46,14 @@ jobs:
           chmod +x tests/pipefail-safety.sh
           ./tests/pipefail-safety.sh
 
+      - name: LAM JSON config contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tests/lam-config-json.sh
+          python3 -m py_compile scripts/lib/lam_config_json.py
+          ./tests/lam-config-json.sh
+
       - name: Ensure LF shell scripts
         shell: bash
         run: |
