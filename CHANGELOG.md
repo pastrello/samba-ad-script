@@ -2,6 +2,15 @@
 
 Este projeto está em fase pré-1.0. Installer e upgrader possuem versões independentes.
 
+## Installer 0.6.3 — 2026-09-05
+
+### Fixed
+- corrige a configuração da senha mestre do LDAP Account Manager 9.6/9.5.2, cujo `config.cfg` é JSON e não possui uma linha `password:` no arquivo sample;
+- adiciona/atualiza a chave JSON `password` preservando um arquivo válido e usando gravação atômica;
+- mantém o hash fora da linha de comando e valida o JSON após a gravação;
+- adiciona teste de regressão para criação, atualização e rejeição de configuração inválida;
+- mantém `STATE_FORMAT_VERSION=3`, permitindo retomar instalações 0.6.2 interrompidas na etapa LAM sem reprovisionar o domínio ou recompilar o Samba.
+
 ## Installer 0.6.2 — 2026-09-05
 
 ### Fixed

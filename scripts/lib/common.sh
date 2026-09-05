@@ -37,7 +37,7 @@ LAM_SHA256="${LAM_SHA256:-}"
 LAM_FALLBACK_SHA256="${LAM_FALLBACK_SHA256:-}"
 LAM_EFFECTIVE_SHA256=""
 
-INSTALLER_REVISION="${INSTALLER_REVISION:-0.6.2}"
+INSTALLER_REVISION="${INSTALLER_REVISION:-0.6.3}"
 STATE_FORMAT_VERSION="3"
 INSTALLER_SELF_SHA256=""
 INSTALLER_COMMON_SHA256=""
@@ -1097,24 +1097,11 @@ install_lam() {
         echo "{SSHA}" . base64_encode(sha1($password . $salt, true)) . " " . base64_encode($salt);
     ')"
 
-    python3 - /var/www/html/lam/config/config.cfg "$lam_password_ssha" <<'PY'
-from pathlib import Path
-import sys
-path = Path(sys.argv[1])
-new_hash = sys.argv[2]
-lines = path.read_text().splitlines()
-done = False
-out = []
-for line in lines:
-    if line.lstrip().startswith("password:"):
-        out.append("password: " + new_hash)
-        done = True
-    else:
-        out.append(line)
-if not done:
-    raise SystemExit("Linha 'password:' não encontrada no config.cfg do LAM")
-path.write_text("\n".join(out) + "\n")
-PY
+    # LAM 9.5.2/9.6 usa config.cfg em JSON e o sample não contém a chave
+    # "password". O hash é enviado por ambiente para não aparecer na linha de
+    # comando e o utilitário grava o JSON de forma atômica.
+    LAM_PASSWORD_HASH="$lam_password_ssha" \
+        python3 "${SCRIPT_DIR}/lib/lam_config_json.py" /var/www/html/lam/config/config.cfg
 
     local fqdn="${HOSTNAME_SHORT}.${AD_DNS_DOMAIN}"
 
