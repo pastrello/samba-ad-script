@@ -37,7 +37,7 @@ LAM_SHA256="${LAM_SHA256:-}"
 LAM_FALLBACK_SHA256="${LAM_FALLBACK_SHA256:-}"
 LAM_EFFECTIVE_SHA256=""
 
-INSTALLER_REVISION="${INSTALLER_REVISION:-0.6.1}"
+INSTALLER_REVISION="${INSTALLER_REVISION:-0.6.2}"
 STATE_FORMAT_VERSION="3"
 INSTALLER_SELF_SHA256=""
 INSTALLER_COMMON_SHA256=""
@@ -793,6 +793,16 @@ p.write_text("\n".join(out) + "\n")
 PY
 }
 
+samba_build_option() {
+    local key="$1"
+    local build_info
+
+    # Avoid producer pipelines here. With pipefail, an early-exiting
+    # consumer can make smbd receive SIGPIPE and return 141.
+    build_info="$("${SAMBA_PREFIX}/sbin/smbd" -b 2>/dev/null)" || return 1
+    awk -F': ' -v key="$key" '$1 ~ "^[[:space:]]*" key "$" {print $2}' <<<"$build_info"
+}
+
 provision_domain() {
     export PATH="${SAMBA_PREFIX}/bin:${SAMBA_PREFIX}/sbin:${PATH}"
 
@@ -802,8 +812,8 @@ provision_domain() {
     local private_dir
     local samdb
 
-    smb_conf="$("${SAMBA_PREFIX}/sbin/smbd" -b | awk -F': ' '/CONFIGFILE:/ {print $2; exit}')"
-    private_dir="$("${SAMBA_PREFIX}/sbin/smbd" -b | awk -F': ' '/PRIVATE_DIR:/ {print $2; exit}')"
+    smb_conf="$(samba_build_option CONFIGFILE)"
+    private_dir="$(samba_build_option PRIVATE_DIR)"
     [[ -n "$smb_conf" && -n "$private_dir" ]] || die "Não foi possível descobrir CONFIGFILE/PRIVATE_DIR do Samba."
     samdb="${private_dir}/sam.ldb"
 
@@ -911,7 +921,7 @@ configure_samba_tls_trust() {
     info "Confiando localmente na CA TLS gerada pelo Samba para LDAPS"
 
     local private_dir ca cert
-    private_dir="$("${SAMBA_PREFIX}/sbin/smbd" -b | awk -F': ' '/PRIVATE_DIR:/ {print $2; exit}')"
+    private_dir="$(samba_build_option PRIVATE_DIR)"
     ca="${private_dir}/tls/ca.pem"
     cert="${private_dir}/tls/cert.pem"
 
@@ -1173,7 +1183,7 @@ EOF
     systemctl restart systemd-journald
 
     local samba_logbase
-    samba_logbase="$("${SAMBA_PREFIX}/sbin/smbd" -b 2>/dev/null | awk -F': ' '/LOGFILEBASE:/ {print $2; exit}' || true)"
+    samba_logbase="$(samba_build_option LOGFILEBASE || true)"
     if [[ -n "$samba_logbase" ]]; then
         cat >/etc/logrotate.d/samba-ad-custom <<EOF
 ${samba_logbase}/log.* ${samba_logbase}/*.log {
@@ -1537,7 +1547,7 @@ install_healthcheck() {
     info "Instalando health-check do Samba AD"
 
     local private_dir
-    private_dir="$("${SAMBA_PREFIX}/sbin/smbd" -b | awk -F': ' '/PRIVATE_DIR:/ {print $2; exit}')"
+    private_dir="$(samba_build_option PRIVATE_DIR)"
 
     cat >/usr/local/sbin/samba-ad-health <<EOF
 #!/usr/bin/env bash
