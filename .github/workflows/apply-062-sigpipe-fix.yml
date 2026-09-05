@@ -22,31 +22,44 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
           p = Path('scripts/lib/common.sh')
           s = p.read_text()
-          pattern = re.compile(
-              r'(?m)^    local smb_conf\n'
-              r'    local private_dir\n'
-              r'    local samdb\n\n'
-              r'    smb_conf=.*?CONFIGFILE:.*?exit.*?\n'
-              r'    private_dir=.*?PRIVATE_DIR:.*?exit.*?\n'
-          )
-          replacement = (
-              '    local smb_conf\n'
-              '    local private_dir\n'
-              '    local samdb\n'
-              '    local smbd_build_info\n\n'
-              '    # Capture once. Do not pipe smbd -b into an early-exiting consumer while\n'
-              '    # pipefail is enabled: the producer may receive SIGPIPE and return 141.\n'
-              '    smbd_build_info="$("${SAMBA_PREFIX}/sbin/smbd" -b)"\n'
-              '    smb_conf="$(awk -F\': \' \'/^[[:space:]]*CONFIGFILE:/ {print $2}\' <<<"$smbd_build_info")"\n'
-              '    private_dir="$(awk -F\': \' \'/^[[:space:]]*PRIVATE_DIR:/ {print $2}\' <<<"$smbd_build_info")"\n'
-          )
-          s, n = pattern.subn(replacement, s, count=1)
-          if n != 1:
-              raise SystemExit('expected provision discovery block not found')
+
+          helper = '\n'.join([
+              'samba_build_option() {',
+              '    local key="$1"',
+              '    local build_info',
+              '',
+              '    # Avoid producer pipelines here. With pipefail, an early-exiting',
+              '    # consumer can make smbd receive SIGPIPE and return 141.',
+              '    build_info="$("${SAMBA_PREFIX}/sbin/smbd" -b 2>/dev/null)" || return 1',
+              '    awk -F\': \' -v key="$key" \'$1 ~ "^[[:space:]]*" key "$" {print $2}\' <<<"$build_info"',
+              '}',
+              '',
+              ''
+          ])
+          marker = 'provision_domain() {\n'
+          if 'samba_build_option() {' not in s:
+              if marker not in s:
+                  raise SystemExit('provision_domain marker not found')
+              s = s.replace(marker, helper + marker, 1)
+
+          replacements = {
+              'smb_conf="$("${SAMBA_PREFIX}/sbin/smbd" -b | awk -F\': \' \'/CONFIGFILE:/ {print $2; exit}\')"': 'smb_conf="$(samba_build_option CONFIGFILE)"',
+              'private_dir="$("${SAMBA_PREFIX}/sbin/smbd" -b | awk -F\': \' \'/PRIVATE_DIR:/ {print $2; exit}\')"': 'private_dir="$(samba_build_option PRIVATE_DIR)"',
+              'samba_logbase="$("${SAMBA_PREFIX}/sbin/smbd" -b 2>/dev/null | awk -F\': \' \'/LOGFILEBASE:/ {print $2; exit}\' || true)"': 'samba_logbase="$(samba_build_option LOGFILEBASE || true)"',
+          }
+          for old, new in replacements.items():
+              s = s.replace(old, new)
+
+          if '| awk -F\': \' \'/CONFIGFILE:/ {print $2; exit}\'' in s:
+              raise SystemExit('CONFIGFILE early-exit pipeline remains')
+          if '| awk -F\': \' \'/PRIVATE_DIR:/ {print $2; exit}\'' in s:
+              raise SystemExit('PRIVATE_DIR early-exit pipeline remains')
+          if '| awk -F\': \' \'/LOGFILEBASE:/ {print $2; exit}\'' in s:
+              raise SystemExit('LOGFILEBASE early-exit pipeline remains')
+
           s = s.replace('INSTALLER_REVISION="${INSTALLER_REVISION:-0.6.1}"', 'INSTALLER_REVISION="${INSTALLER_REVISION:-0.6.2}"', 1)
           p.write_text(s)
 
@@ -63,16 +76,19 @@ jobs:
               '',
               '### Fixed',
               '- corrige `SIGPIPE`/exit 141 ao iniciar `samba_provision` com `set -o pipefail`;',
-              '- `smbd -b` agora é capturado uma única vez e `CONFIGFILE`/`PRIVATE_DIR` são extraídos do texto em memória, sem pipeline com consumidor que encerra cedo;',
+              '- centraliza a leitura de `smbd -b` em `samba_build_option()`, sem pipeline com consumidor que encerra cedo;',
+              '- corrige o mesmo padrão latente nas rotinas de TLS, logrotate e health-check;',
               '- mantém compatibilidade com checkpoint v3, permitindo retomar uma instalação 0.6/0.6.1 que já concluiu o build do Samba;',
-              '- adiciona teste de regressão para impedir a volta do padrão `smbd -b | awk ... exit`.',
+              '- adiciona teste de regressão que proíbe qualquer pipeline direto a partir de `smbd -b`.',
               '',
               ''
           ])
           marker = '## Installer 0.6.1 — 2026-09-05\n'
-          if marker not in s:
-              raise SystemExit('changelog marker not found')
-          p.write_text(s.replace(marker, entry + marker, 1))
+          if '## Installer 0.6.2 — 2026-09-05' not in s:
+              if marker not in s:
+                  raise SystemExit('changelog marker not found')
+              s = s.replace(marker, entry + marker, 1)
+          p.write_text(s)
 
           test_lines = [
               '#!/usr/bin/env bash',
@@ -80,15 +96,15 @@ jobs:
               '',
               'f="scripts/lib/common.sh"',
               '',
-              'if grep -nE "smbd.*-b.*\\|.*awk.*exit" "$f"; then',
-              '    echo "[ERRO] padrão smbd -b | awk ... exit voltou ao código" >&2',
+              'if grep -nE "smbd.*-b.*\\|" "$f"; then',
+              '    echo "[ERRO] pipeline direto a partir de smbd -b voltou ao código" >&2',
               '    exit 1',
               'fi',
               '',
-              'grep -q "local smbd_build_info" "$f"',
-              'grep -q "smbd_build_info=.*smbd.*-b" "$f"',
-              'grep -q "CONFIGFILE:/" "$f"',
-              'grep -q "PRIVATE_DIR:/" "$f"',
+              'grep -q "samba_build_option()" "$f"',
+              'grep -q "samba_build_option CONFIGFILE" "$f"',
+              'grep -q "samba_build_option PRIVATE_DIR" "$f"',
+              'grep -q "samba_build_option LOGFILEBASE" "$f"',
               '',
               'set +e',
               'bash -o pipefail -c \'yes x | awk "NR==1 {print; exit}" >/dev/null\'',
@@ -145,5 +161,5 @@ jobs:
             echo 'No changes to commit'
             exit 0
           fi
-          git commit -m 'fix: avoid SIGPIPE while discovering Samba paths'
+          git commit -m 'fix: avoid SIGPIPE while reading Samba build options'
           git push
