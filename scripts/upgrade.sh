@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
-# scripts/upgrade.sh
+# upgrade.sh
 #
 # Atualizador seguro para Samba AD DC compilado do fonte.
 # Compatível com:
-#   - scripts/install.sh (manifesto /etc/samba-ad/installation.env)
+#   - installer 0.6 multi-distribuição (Rocky Linux / Ubuntu)
+#   - installer 0.5 em Rocky Linux
 #   - instalações anteriores do mesmo projeto sem manifesto (modo legado)
 #
 # Objetivos:
@@ -18,15 +19,15 @@
 #   * atualizar manifesto, build-info e histórico de upgrades.
 #
 # Uso:
-#   ./scripts/upgrade.sh 4.24.6
-#   ./scripts/upgrade.sh 4.24.6 --yes
-#   ./scripts/upgrade.sh 4.25.1 --allow-feature-upgrade
+#   ./upgrade.sh 4.24.6
+#   ./upgrade.sh 4.24.6 --yes
+#   ./upgrade.sh 4.25.1 --allow-feature-upgrade
 #
 set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 
-UPGRADER_REVISION="1.1"
+UPGRADER_REVISION="1.2"
 DEFAULT_GPG_FINGERPRINT="81F5E2832BD2545A1897B713AA99442FB680B620"
 
 # ---------------------------------------------------------------------------
@@ -81,6 +82,8 @@ declare -a CONFIGURE_ARGS=()
 
 MANIFEST_PRESENT=0
 MANIFEST_INSTALLER_REVISION=""
+MANIFEST_DISTRO_ID=""
+MANIFEST_DISTRO_VERSION=""
 MANIFEST_SAMBA_VERSION=""
 MANIFEST_SAMBA_PREFIX=""
 MANIFEST_AD_DNS_DOMAIN=""
@@ -112,13 +115,13 @@ die()  { printf '\033[1;31m[ERRO]\033[0m %s\n' "$*" >&2; exit 1; }
 usage() {
     cat <<'USAGE'
 Uso:
-  ./scripts/upgrade.sh VERSAO [opções]
+  upgrade.sh VERSAO [opções]
 
 Exemplos:
-  ./scripts/upgrade.sh --audit
-  ./scripts/upgrade.sh 4.24.6
-  ./scripts/upgrade.sh 4.24.6 --yes
-  ./scripts/upgrade.sh 4.25.1 --allow-feature-upgrade
+  upgrade.sh --audit
+  upgrade.sh 4.24.6
+  upgrade.sh 4.24.6 --yes
+  upgrade.sh 4.25.1 --allow-feature-upgrade
 
 Opções:
   --allow-feature-upgrade
@@ -306,6 +309,8 @@ load_manifest() {
     MANIFEST_PRESENT=1
 
     MANIFEST_INSTALLER_REVISION="$(manifest_get INSTALLER_REVISION)"
+    MANIFEST_DISTRO_ID="$(manifest_get DISTRO_ID)"
+    MANIFEST_DISTRO_VERSION="$(manifest_get DISTRO_VERSION)"
     MANIFEST_SAMBA_VERSION="$(manifest_get SAMBA_VERSION)"
     MANIFEST_SAMBA_PREFIX="$(manifest_get SAMBA_PREFIX)"
     MANIFEST_AD_DNS_DOMAIN="$(manifest_get AD_DNS_DOMAIN)"
@@ -436,7 +441,10 @@ ensure_build_user() {
         fi
     else
         info "Criando usuário sem privilégios para compilação: $BUILD_USER"
-        useradd --system --home-dir "$BUILD_HOME" --create-home --shell /sbin/nologin "$BUILD_USER"
+        local nologin_shell
+        nologin_shell="$(command -v nologin 2>/dev/null || true)"
+        [[ -n "$nologin_shell" ]] || nologin_shell="/usr/sbin/nologin"
+        useradd --system --home-dir "$BUILD_HOME" --create-home --shell "$nologin_shell" "$BUILD_USER"
     fi
 
     mkdir -p "$BUILD_HOME"
@@ -544,6 +552,9 @@ check_environment() {
 
     info "Ambiente detectado"
     printf '  Upgrader             : %s\n' "$UPGRADER_REVISION"
+    if [[ -n "$MANIFEST_DISTRO_ID" ]]; then
+        printf '  Distribuição         : %s %s\n' "$MANIFEST_DISTRO_ID" "$MANIFEST_DISTRO_VERSION"
+    fi
     printf '  Samba atual          : %s\n' "$CURRENT_VERSION"
     printf '  Samba destino        : %s\n' "$([[ $AUDIT_ONLY -eq 1 ]] && printf 'AUDITORIA APENAS' || printf '%s' "$TARGET_VERSION")"
     printf '  Prefixo              : %s\n' "$SAMBA_PREFIX"
@@ -1037,6 +1048,9 @@ PY
         echo "Samba build information"
         echo "Generated: $(date -Is)"
         echo "Installer: ${MANIFEST_INSTALLER_REVISION:-legacy/unknown}"
+        if [[ -n "$MANIFEST_DISTRO_ID" ]]; then
+            echo "Distribution: ${MANIFEST_DISTRO_ID} ${MANIFEST_DISTRO_VERSION}"
+        fi
         echo "Last upgrader: ${UPGRADER_REVISION}"
         echo "Upgrade: ${CURRENT_VERSION} -> ${TARGET_VERSION}"
         echo "Source SHA256: ${SOURCE_SHA256}"

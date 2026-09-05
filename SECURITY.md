@@ -2,43 +2,33 @@
 
 ## Escopo
 
-Este repositório automatiza a implantação de um Active Directory compatível via Samba. Bugs podem afetar autenticação, DNS, Kerberos, firewall, TLS, backup e disponibilidade do domínio.
+O projeto automatiza um Samba Active Directory Domain Controller e integra DNS, Kerberos, firewall, TLS, monitoring e backup. Bugs podem afetar autenticação, confidencialidade ou disponibilidade do domínio.
 
-O projeto está em fase **experimental / pré-1.0**. Não há SLA nem garantia de adequação a ambientes de produção.
+O projeto é **experimental / pré-1.0** e não possui SLA.
 
-## Reportando uma vulnerabilidade
+## Princípios
 
-Não publique credenciais, chaves privadas ou material de um domínio real em uma issue pública.
+- não desabilitar SELinux/AppArmor como solução genérica;
+- manter firewalld/UFW com política restritiva;
+- restringir serviços por CIDR;
+- não confiar em download de código sem validação apropriada;
+- não persistir credenciais em linha de comando quando evitável;
+- preferir falha segura a continuar com ambiente inconsistente.
 
-Para problemas que exponham informação sensível ou permitam comprometimento, prefira o mecanismo privado de **GitHub Security Advisories / Report a vulnerability**, quando disponível no repositório. Caso não esteja disponível, entre em contato com o mantenedor pelo perfil GitHub antes de publicar detalhes exploráveis.
+## Reportando vulnerabilidade
 
-Para bugs não sensíveis, abra uma issue normalmente.
+Não publique credenciais, chaves, bancos AD ou material de domínio real em issue pública.
 
-## O que enviar
+Para vulnerabilidade com impacto de segurança, use **GitHub Security Advisories / Report a vulnerability** se o recurso estiver habilitado. Caso contrário, contate o mantenedor por um canal privado indicado no perfil do repositório.
 
-Inclua, quando possível e sanitizado:
+Inclua, de forma sanitizada:
 
-- versão do Rocky Linux;
-- versão do instalador/atualizador;
-- versão do Samba;
-- passo em que ocorreu a falha;
-- logs relevantes sem segredos;
-- impacto observado;
-- forma segura de reproduzir.
+- distribuição/release;
+- versão do installer/upgrader e Samba;
+- impacto;
+- passos mínimos para reproduzir;
+- logs estritamente necessários.
 
-## Princípios do projeto
+## Plataformas
 
-As correções devem tentar preservar:
-
-- SELinux habilitado;
-- firewalld habilitado;
-- mínimo de exposição de portas;
-- validação de downloads;
-- ausência de senha na linha de comando;
-- backup consistente antes de operações de risco;
-- rollback previsível;
-- execução sem privilégios sempre que viável.
-
-## Dependências
-
-O projeto instala software de terceiros. Vulnerabilidades no Samba, Rocky Linux, PHP, LAM, Grafana, Prometheus, Cockpit, Borg ou Restic devem também ser acompanhadas nos respectivos projetos upstream.
+Rocky 10 usa SELinux/firewalld. Ubuntu 22.04/24.04 usa AppArmor/UFW. Um comportamento seguro em uma plataforma não deve ser presumido equivalente na outra sem teste.

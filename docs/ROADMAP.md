@@ -1,35 +1,41 @@
 # Roadmap
 
-O projeto está em fase pré-1.0. A prioridade é transformar o fluxo atual de laboratório em uma base reproduzível e auditável.
+Projeto pré-1.0. A prioridade é converter o que já funciona em laboratório em uma base reproduzível, multi-distribuição e auditável.
 
 ## Antes da 1.0
 
-- [ ] executar o instalador v0.5 end-to-end em múltiplas VMs Rocky Linux 10 limpas;
-- [ ] validar instalação em Rocky 10 com diferentes perfis de rede;
-- [ ] validar um upgrade real assim que houver versão Samba adequada para teste;
-- [ ] testar rollback do upgrade de forma deliberada;
-- [ ] criar teste automatizado de funções puras do instalador;
-- [ ] ampliar CI estática;
+- [x] separar lógica comum de integração com a distribuição;
+- [x] adapter Rocky Linux 10;
+- [x] adapter Ubuntu 22.04/24.04;
+- [x] testes estáticos do contrato dos adapters;
+- [x] upgrader compatível com manifesto multi-distro;
+- [ ] executar installer 0.6 end-to-end em Rocky Linux 10 limpo;
+- [ ] executar installer 0.6 end-to-end em Ubuntu 22.04 limpo;
+- [ ] executar installer 0.6 end-to-end em Ubuntu 24.04 limpo;
+- [ ] validar UFW sem perda de acesso remoto em múltiplos perfis;
+- [ ] validar AppArmor + Chrony/ntp_signd em Ubuntu;
+- [ ] validar LAM + LDAPS de ponta a ponta nas três plataformas;
+- [ ] validar upgrade real quando houver release Samba adequada;
+- [ ] testar rollback deliberadamente;
 - [ ] documentar restore completo em laboratório;
-- [ ] validar LAM + LDAPS de ponta a ponta;
-- [ ] dashboards Grafana básicos para o host;
-- [ ] revisar permissões e unidades systemd.
+- [ ] dashboards Grafana básicos;
+- [ ] revisar hardening das unidades systemd.
 
 ## Depois da 1.0
 
-- [ ] modo "adicionar segundo DC" a domínio existente;
-- [ ] verificação de replicação (`samba-tool drs showrepl`);
-- [ ] estratégia documentada para SYSVOL em múltiplos DCs;
-- [ ] suporte opcional a BIND9_DLZ;
-- [ ] integração opcional de backup remoto via Restic/Borg;
-- [ ] suporte estudado para AlmaLinux/RHEL equivalentes;
-- [ ] empacotamento/instalador mais modular;
-- [ ] releases/tagging semântico do projeto.
+- [ ] adicionar segundo DC a domínio existente;
+- [ ] `samba-tool drs showrepl` e saúde de replicação;
+- [ ] estratégia SYSVOL multi-DC;
+- [ ] BIND9_DLZ opcional;
+- [ ] backup remoto Restic/Borg;
+- [ ] adapter AlmaLinux/RHEL equivalente;
+- [ ] avaliar Debian 12/13;
+- [ ] release/tagging semântico e matriz CI mais ampla.
 
 ## Fora de escopo por enquanto
 
 - substituir RSAT/GPMC;
-- administrar GPO integralmente por interface web;
+- GPO integral por web;
 - CUPS/Webmin;
-- oferecer suporte comercial/SLA;
-- configurar automaticamente um destino de backup com credenciais.
+- suporte comercial/SLA;
+- configurar automaticamente credenciais de backup remoto.

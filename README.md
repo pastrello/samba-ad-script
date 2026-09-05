@@ -3,25 +3,40 @@
 [![Validate Bash](https://github.com/pastrello/samba-ad-script/actions/workflows/validate.yml/badge.svg)](https://github.com/pastrello/samba-ad-script/actions/workflows/validate.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Rocky Linux 10](https://img.shields.io/badge/Rocky%20Linux-10-10B981)
+![Ubuntu LTS](https://img.shields.io/badge/Ubuntu-22.04%20%7C%2024.04-E95420)
 ![Samba](https://img.shields.io/badge/Samba-AD%20DC-0B5CAD)
 
-Scripts para instalar, manter e atualizar um **Samba Active Directory Domain Controller no Rocky Linux 10**, com uma pilha administrativa e de observabilidade totalmente baseada em software open source.
+Scripts para instalar, manter e atualizar um **Samba Active Directory Domain Controller** compilado do fonte oficial, com uma pilha administrativa e de observabilidade baseada em software open source.
 
-O projeto surgiu de um laboratório prático com o objetivo de tornar um Samba AD compilado do fonte mais fácil de instalar e manter em distribuições RHEL-like, sem esconder o funcionamento do Samba atrás de um appliance.
+O instalador 0.6 introduz uma arquitetura por adapters de distribuição. O núcleo do Samba/AD permanece comum e a integração com pacotes, firewall, resolver, servidor web e mecanismo MAC é tratada por plataforma.
 
-> **Status:** projeto experimental / pré-1.0. Use primeiro em laboratório. O instalador v0.5 contém melhorias que ainda precisam de validação end-to-end em mais ambientes Rocky Linux 10 antes de ser recomendado para produção.
+> **Status:** projeto experimental / pré-1.0. Rocky Linux 10 possui validação real de laboratório em versões anteriores do instalador. Os adapters Ubuntu 22.04/24.04 possuem validação estática/CI e ainda precisam de testes end-to-end em VMs limpas antes de recomendação para produção.
+
+## Matriz de suporte
+
+| Plataforma | Tier | Estado |
+|---|---|---|
+| Rocky Linux 10.x | supported | base original; validação de laboratório disponível |
+| Ubuntu Server 22.04 LTS | supported | adapter implementado; validação end-to-end pendente |
+| Ubuntu Server 24.04 LTS | supported | adapter implementado; validação end-to-end pendente |
+| Ubuntu > 24.04 | experimental | aceito com aviso; não faz parte da matriz principal |
+| outras distribuições | unsupported | adapter ainda não implementado |
+
+O comando abaixo não altera o servidor e mostra como a plataforma foi classificada:
+
+```bash
+sudo ./scripts/install.sh --check-platform
+```
 
 ## O que é instalado
 
-O instalador monta a seguinte pilha:
-
 ```text
-Rocky Linux 10
+Rocky Linux 10 / Ubuntu Server 22.04 ou 24.04
 │
 ├── Samba AD DC em /opt/samba
 │   ├── Active Directory
 │   ├── Kerberos
-│   ├── LDAP
+│   ├── LDAP / LDAPS
 │   ├── DNS interno do Samba
 │   ├── SYSVOL
 │   └── NETLOGON
@@ -36,55 +51,52 @@ Rocky Linux 10
 └── backup e health-check via systemd timers
 ```
 
-**Não são instalados:** Webmin, CUPS e BIND9_DLZ. O DNS inicial é o `SAMBA_INTERNAL`.
+**Não são instalados:** Webmin, CUPS e BIND9_DLZ. O backend DNS inicial é `SAMBA_INTERNAL`.
 
-## Por que o Samba é compilado?
+## Integração por distribuição
 
-O projeto instala o Samba em `/opt/samba` a partir do fonte oficial e valida a assinatura GPG antes da compilação. Isso mantém o AD DC isolado dos pacotes Samba do sistema e permite controlar a versão usada pelo domínio.
+| Função | Rocky Linux 10 | Ubuntu 22.04/24.04 |
+|---|---|---|
+| Pacotes | DNF / EPEL / CRB | APT / Universe |
+| Firewall | firewalld | UFW |
+| Segurança MAC | SELinux | AppArmor |
+| Servidor web | httpd | apache2 |
+| Resolver | NetworkManager | systemd-resolved / resolv.conf |
+| node exporter | node_exporter | prometheus-node-exporter |
 
-Documentação oficial relevante:
-
-- Samba: https://www.samba.org/
-- Downloads: https://download.samba.org/pub/samba/stable/
-- Samba Wiki: https://wiki.samba.org/
-- Rocky Linux: https://rockylinux.org/
-- LDAP Account Manager: https://www.ldap-account-manager.org/
-- Cockpit: https://cockpit-project.org/
-- Prometheus: https://prometheus.io/
-- Grafana OSS: https://grafana.com/oss/grafana/
+No Ubuntu, o instalador mantém `systemd-resolved`, mas desativa o DNS stub local para liberar TCP/UDP 53 para o Samba. Consulte [docs/UBUNTU.md](docs/UBUNTU.md).
 
 ## Quick start
 
-Use uma **VM Rocky Linux 10 nova**, com IP estático e DNS/networking previamente definidos.
+Use uma **VM limpa**, com IPv4 estático e acesso à Internet.
 
 ```bash
 git clone https://github.com/pastrello/samba-ad-script.git
 cd samba-ad-script
-chmod +x scripts/*.sh
+chmod +x scripts/*.sh tests/*.sh
+sudo ./scripts/install.sh --check-platform
 sudo ./scripts/install.sh
 ```
 
-Exemplo não interativo:
+Exemplo com variáveis:
 
 ```bash
 sudo \
   HOSTNAME_SHORT=dc1 \
-  AD_DNS_DOMAIN=ad.empresa.com.br \
-  NETBIOS_DOMAIN=EMPRESA \
-  DC_IP=192.168.10.10 \
-  DNS_FORWARDER=192.168.10.1 \
-  CLIENT_CIDRS="192.168.10.0/24,192.168.20.0/24" \
-  MGMT_CIDRS="192.168.10.0/24" \
+  AD_DNS_DOMAIN=ad.example.com \
+  NETBIOS_DOMAIN=EXAMPLE \
+  DC_IP=192.0.2.10 \
+  DNS_FORWARDER=192.0.2.1 \
+  CLIENT_CIDRS="192.0.2.0/24" \
+  MGMT_CIDRS="192.0.2.0/24" \
   ./scripts/install.sh
 ```
 
-A senha do `Administrator` do domínio é solicitada de forma oculta.
-
-Leia antes: **[Guia de instalação](docs/INSTALLATION.md)**.
+A senha do `Administrator` é solicitada de forma oculta. Leia o [Guia de instalação](docs/INSTALLATION.md) antes de usar fora de laboratório.
 
 ## Upgrade do Samba
 
-O atualizador foi feito para preservar os parâmetros registrados pelo instalador, compilar a nova versão com o DC online e reduzir a indisponibilidade ao momento de instalação/restart.
+O atualizador 1.2 é compatível com o manifesto multi-distribuição do installer 0.6 e também mantém modo legado para instalações anteriores do projeto.
 
 Auditoria sem alterações:
 
@@ -98,60 +110,48 @@ Upgrade de patch na mesma série:
 sudo ./scripts/upgrade.sh 4.24.6
 ```
 
-Mudanças de série, por exemplo `4.24 -> 4.25`, são bloqueadas por padrão e exigem uma opção explícita após leitura das release notes.
+O build ocorre com o DC online; a janela de indisponibilidade fica concentrada em snapshot, `make install` e restart. Mudanças de série continuam bloqueadas por padrão.
 
-Leia: **[Guia de upgrade](docs/UPGRADE.md)**.
+Leia [docs/UPGRADE.md](docs/UPGRADE.md).
 
 ## Segurança por padrão
 
-O projeto procura manter alguns princípios simples:
-
-- SELinux **não é desativado**;
-- `firewalld` permanece ativo;
-- redes de clientes e administração são restritas por CIDR;
-- `0.0.0.0/0` é bloqueado por padrão;
-- zonas `trusted`/`ACCEPT` do firewalld são recusadas por padrão;
-- fonte do Samba é validado por GPG;
-- build do Samba é executado com usuário sem privilégios;
-- Prometheus e node_exporter ficam restritos ao loopback;
+- SELinux/AppArmor **não são desativados**;
+- firewalld/UFW permanecem ativos;
+- acesso AD e administrativo é limitado por CIDR;
+- `0.0.0.0/0` é recusado por padrão;
+- configurações de firewall permissivas são detectadas defensivamente;
+- fonte do Samba é autenticada por GPG e fingerprint esperado;
+- build é executado como usuário sem privilégios;
+- Prometheus e node_exporter ficam no loopback;
 - LAM e Grafana usam HTTPS;
-- backups consistentes do AD são criados com `samba-tool domain backup`;
-- o upgrade cria snapshot de rollback antes do `make install`.
+- a senha inicial do Grafana não permanece no ambiente do processo após o bootstrap;
+- backups consistentes usam `samba-tool domain backup`;
+- o upgrader cria snapshot consistente antes do `make install`.
 
-Veja **[SECURITY.md](SECURITY.md)** para limites e política de reporte.
+Veja [SECURITY.md](SECURITY.md).
 
-## Interfaces após a instalação
-
-Por padrão:
-
-```text
-Cockpit : https://IP_DO_DC:9090/
-LAM     : https://FQDN_DO_DC/lam/
-Grafana : https://FQDN_DO_DC:3000/
-
-Prometheus   : 127.0.0.1:9091
-node_exporter: 127.0.0.1:9100
-```
-
-LAM/Grafana começam com certificado administrativo self-signed. O instalador informa onde encontrar o certificado para importação nos clientes.
-
-## Estrutura do repositório
+## Estrutura
 
 ```text
 .
 ├── scripts/
-│   ├── install.sh
-│   └── upgrade.sh
+│   ├── install.sh                 # dispatcher / CLI
+│   ├── upgrade.sh                 # upgrader multi-distro
+│   └── lib/
+│       ├── common.sh              # lógica comum Samba/AD
+│       ├── distro-rocky.sh        # integração Rocky 10
+│       └── distro-ubuntu.sh       # integração Ubuntu LTS
+├── tests/
+│   └── platform-detection.sh
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   ├── INSTALLATION.md
+│   ├── UBUNTU.md
 │   ├── UPGRADE.md
 │   ├── BACKUP-RESTORE.md
 │   ├── TROUBLESHOOTING.md
 │   └── ROADMAP.md
-├── .github/
-│   ├── workflows/
-│   └── ISSUE_TEMPLATE/
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
 ├── SECURITY.md
@@ -162,22 +162,22 @@ LAM/Grafana começam com certificado administrativo self-signed. O instalador in
 
 | Item | Estado |
 |---|---|
-| Rocky Linux 10 | alvo principal |
-| Samba 4.24.x | alvo atual |
-| Provisionamento de AD/DNS/Kerberos | validado em laboratório |
-| FSMO / dbcheck / SRV LDAP/Kerberos | validado em laboratório |
-| Instalador v0.5 completo | aguardando mais testes end-to-end |
-| Upgrade v1.1 | auditoria disponível; upgrade real depende de uma versão Samba posterior |
+| `bash -n` de installer/upgrader/adapters | CI |
+| contrato dos adapters | CI |
+| detecção Rocky 10 / Ubuntu 22.04 / 24.04 | CI |
+| provisionamento Samba 4.24.5 em Rocky 10 | validado em laboratório em geração anterior |
+| FSMO / dbcheck / SRV LDAP/Kerberos em Rocky 10 | validado em laboratório |
+| installer 0.6 Rocky 10 | refatorado; nova rodada end-to-end pendente |
+| installer 0.6 Ubuntu 22.04 | end-to-end pendente |
+| installer 0.6 Ubuntu 24.04 | end-to-end pendente |
+| upgrader 1.2 | `--audit` disponível; upgrade real depende de release Samba adequada |
 | Multi-DC | roadmap |
-| BIND9_DLZ | roadmap / opcional futuro |
 
-Esse quadro é deliberadamente conservador: um teste bem-sucedido em laboratório não equivale a suporte de produção.
+Esse quadro é deliberadamente conservador: teste estático não substitui um provisionamento real de AD.
 
 ## Contribuindo
 
-Issues e pull requests são bem-vindos. Antes de enviar mudanças, leia **[CONTRIBUTING.md](CONTRIBUTING.md)**.
-
-Em especial, não envie senhas, dumps de `sam.ldb`, chaves privadas, logs com credenciais ou informações de um domínio real sem sanitização.
+Issues e pull requests são bem-vindos. Consulte [CONTRIBUTING.md](CONTRIBUTING.md). Não envie senhas, dumps de `sam.ldb`, chaves privadas ou logs não sanitizados.
 
 ## Licença
 
@@ -185,4 +185,4 @@ MIT. Consulte [LICENSE](LICENSE).
 
 ## Aviso
 
-Este projeto é independente e não é afiliado ao Samba Team, Rocky Linux, LDAP Account Manager, Grafana Labs, Prometheus ou Red Hat. Os nomes pertencem aos respectivos projetos/proprietários.
+Projeto independente, sem afiliação com Samba Team, Rocky Linux, Canonical/Ubuntu, LDAP Account Manager, Grafana Labs, Prometheus ou Red Hat.

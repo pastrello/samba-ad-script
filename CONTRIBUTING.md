@@ -2,73 +2,60 @@
 
 Obrigado por considerar contribuir com o Samba AD Script.
 
-## Antes de começar
+Este projeto mexe com autenticação, DNS, Kerberos, firewall e backups. Mudanças devem privilegiar comportamento previsível e falha segura.
 
-Este projeto mexe com autenticação, DNS, Kerberos, firewall e backups. Uma alteração aparentemente pequena pode impedir o boot do serviço ou o login de um domínio inteiro. Por isso, mudanças devem privilegiar comportamento previsível e falha segura.
+## Arquitetura
 
-## Fluxo recomendado
+Não adicione condicionais de distribuição espalhadas em `common.sh` se a diferença puder ser tratada por adapter.
 
-1. Abra uma issue para bugs ou mudanças grandes.
-2. Faça fork/branch da `main`.
-3. Mantenha cada PR focado em um problema.
-4. Explique como a mudança foi testada.
-5. Não remova proteções de segurança apenas para contornar uma falha.
+```text
+scripts/lib/common.sh
+scripts/lib/distro-rocky.sh
+scripts/lib/distro-ubuntu.sh
+```
+
+Novos adapters devem implementar o mesmo contrato validado em `tests/platform-detection.sh`.
 
 ## Validação mínima
 
-Antes do PR:
-
 ```bash
 bash -n scripts/install.sh
+bash -n scripts/lib/common.sh
+bash -n scripts/lib/distro-rocky.sh
+bash -n scripts/lib/distro-ubuntu.sh
 bash -n scripts/upgrade.sh
+bash -n tests/platform-detection.sh
+./tests/platform-detection.sh
 ```
 
-Se `shellcheck` estiver disponível:
+Se `shellcheck` estiver disponível, use-o também.
 
-```bash
-shellcheck -x scripts/install.sh scripts/upgrade.sh
-```
+## Teste end-to-end
 
-Para mudanças no instalador, informe pelo menos:
+Em mudanças de plataforma, informe:
 
-- versão exata do Rocky Linux;
-- versão do Samba;
-- se a VM era limpa ou reaproveitada;
-- modo SELinux;
-- resultado de `samba-tool dbcheck --cross-ncs`;
-- resultado dos testes DNS SRV relevantes.
+- distribuição e release exatas;
+- VM limpa ou reaproveitada;
+- método de rede/resolver;
+- firewall e mecanismo MAC ativos;
+- versão Samba;
+- `samba-tool dbcheck --cross-ncs`;
+- SRV LDAP/Kerberos/GC;
+- teste Kerberos e SYSVOL;
+- estado de LAM/Grafana/Prometheus;
+- teste do backup.
 
 ## Estilo
 
-- Bash com `set -Eeuo pipefail`;
-- nomes de funções/variáveis descritivos;
-- mensagens de erro que expliquem a ação corretiva;
-- operações destrutivas devem ser explícitas;
-- não mascarar erros críticos com `|| true` sem justificativa;
-- novos downloads devem ter verificação de integridade/autenticidade quando possível.
+- `set -Eeuo pipefail`;
+- erros com ação corretiva;
+- operações destrutivas explícitas;
+- não esconder erro crítico com `|| true` sem justificativa;
+- downloads com autenticidade/integridade quando possível;
+- preservar compatibilidade do manifesto/upgrader.
 
 ## Dados sensíveis
 
-Nunca inclua em issues, PRs ou commits:
+Nunca envie senha Administrator, `sam.ldb`, chaves privadas, tickets Kerberos, secrets do Grafana/LAM ou dumps LDAP reais.
 
-- senha do `Administrator`;
-- `/opt/samba/private/sam.ldb`;
-- chaves privadas;
-- arquivos de secrets do Grafana/LAM;
-- tickets Kerberos;
-- dumps LDAP não sanitizados;
-- IPs/domínios reais quando a organização não autorizou a publicação.
-
-Use valores fictícios como:
-
-```text
-ad.example.com
-dc1.ad.example.com
-192.0.2.10
-```
-
-## Compatibilidade
-
-Mudanças que alterem caminhos, manifesto ou parâmetros de build precisam considerar compatibilidade com `scripts/upgrade.sh`.
-
-Até o projeto atingir 1.0, mudanças incompatíveis ainda podem acontecer, mas devem ser documentadas no `CHANGELOG.md`.
+Use exemplos reservados como `ad.example.com` e `192.0.2.10`.

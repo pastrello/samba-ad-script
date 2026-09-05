@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  syntax:
+  syntax-and-contract:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -20,14 +20,40 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bash -n scripts/install.sh
-          bash -n scripts/upgrade.sh
+          while IFS= read -r -d '' file; do
+            echo "bash -n $file"
+            bash -n "$file"
+          done < <(find scripts tests -type f -name '*.sh' -print0)
+
+      - name: Platform adapter contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tests/platform-detection.sh
+          ./tests/platform-detection.sh
 
       - name: Ensure LF shell scripts
         shell: bash
         run: |
           set -euo pipefail
-          if grep -Il $'\r' scripts/*.sh; then
+          mapfile -d '' files < <(find scripts tests -type f -name '*.sh' -print0)
+          if grep -Il $'\r' "${files[@]}"; then
             echo "CRLF detected in shell scripts"
             exit 1
           fi
+
+  ubuntu-platform-check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect real Ubuntu runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo ./scripts/install.sh --check-platform
