@@ -90,3 +90,11 @@ systemctl status apparmor
 systemctl status apache2
 systemctl status prometheus-node-exporter
 ```
+
+## Porta 53 e fallback do systemd-resolved
+
+O instalador tenta primeiro manter `systemd-resolved` ativo com `DNSStubListener=no`. Em algumas instalações Ubuntu observadas em laboratório, o daemon pode continuar mantendo `127.0.0.53:53` e `127.0.0.54:53` mesmo após o restart.
+
+A partir do installer 0.6.1, se **somente** `systemd-resolved` continuar ocupando a porta 53, o instalador aplica um fallback controlado adequado a um DC dedicado: para e mascara `systemd-resolved` e passa a manter `/etc/resolv.conf` diretamente. Antes do provisionamento ele aponta para o forwarder; depois, para o próprio IP do DC.
+
+Se qualquer outro daemon estiver usando a porta 53, a instalação aborta e mostra os listeners encontrados. O instalador não desativa serviços DNS desconhecidos automaticamente.

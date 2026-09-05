@@ -2,6 +2,26 @@
 
 Este projeto está em fase pré-1.0. Installer e upgrader possuem versões independentes.
 
+## Installer 0.6.1 — 2026-09-05
+
+### Fixed
+- corrige o primeiro bug encontrado no teste end-to-end Ubuntu: `systemd-resolved` permanecia ocupando `127.0.0.53/54:53` mesmo após `DNSStubListener=no`;
+- usa drop-in local de alta prioridade `99-samba-ad.conf` e limpa `DNSStubListenerExtra`;
+- identifica o proprietário real da porta 53 antes de tomar qualquer ação;
+- quando apenas `systemd-resolved` insiste em manter a porta 53, aplica fallback controlado para DC dedicado: para/mascara o serviço e mantém `/etc/resolv.conf` estático;
+- se outro daemon DNS ocupar a porta 53, o instalador continua abortando com diagnóstico em vez de desativá-lo;
+- retomada de uma instalação 0.6 parcialmente executada continua suportada porque o formato de estado permanece v3.
+
+## Installer 0.6.1 — 2026-09-05
+
+### Fixed
+- corrige o primeiro bug encontrado no teste end-to-end Ubuntu: `systemd-resolved` permanecia ocupando `127.0.0.53/54:53` mesmo após `DNSStubListener=no`;
+- usa drop-in local de alta prioridade `99-samba-ad.conf` e limpa `DNSStubListenerExtra`;
+- identifica o proprietário real da porta 53 antes de tomar qualquer ação;
+- quando apenas `systemd-resolved` insiste em manter a porta 53, aplica fallback controlado para DC dedicado: para/mascara o serviço e mantém `/etc/resolv.conf` estático;
+- se outro daemon DNS ocupar a porta 53, o instalador continua abortando com diagnóstico em vez de desativá-lo;
+- retomada de uma instalação 0.6 parcialmente executada continua suportada porque o formato de estado permanece v3.
+
 ## Installer 0.6 — 2026-09-05
 
 ### Added

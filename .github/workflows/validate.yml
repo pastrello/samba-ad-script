@@ -32,6 +32,13 @@ jobs:
           chmod +x tests/platform-detection.sh
           ./tests/platform-detection.sh
 
+      - name: Ubuntu resolver contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tests/ubuntu-resolver-contract.sh
+          ./tests/ubuntu-resolver-contract.sh
+
       - name: Ensure LF shell scripts
         shell: bash
         run: |
