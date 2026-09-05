@@ -1,0 +1,32 @@
+# Local/editor
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Logs / temporary
+*.log
+*.tmp
+*.part
+
+# Secrets / local configuration
+.env
+*.key
+*.pem
+*.p12
+*.pfx
+credentials*
+secrets*
+
+# Backups / dumps
+*.tar
+*.tar.gz
+*.tar.zst
+*.bak
+*.ldb
+*.tdb
+
+# OS
+.DS_Store
+Thumbs.db
