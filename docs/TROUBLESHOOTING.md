@@ -1,56 +1,97 @@
 # Troubleshooting
 
-## O FQDN não resolve antes do provisionamento
+## Descobrir adapter/plataforma
 
-Antes de o DNS do AD existir, a validação inicial depende de `/etc/hosts`.
+```bash
+sudo ./scripts/install.sh --check-platform
+```
 
-Exemplo esperado:
+## FQDN antes do provisionamento
+
+Antes de o DNS AD existir, `/etc/hosts` precisa permitir a resolução inicial:
 
 ```text
 192.0.2.10    dc1.ad.example.com    dc1
 ```
 
-Teste:
+## Assinatura Samba 404
 
-```bash
-hostname -f
-getent ahostsv4 dc1.ad.example.com
-```
-
-O instalador v0.5 valida `/etc/hosts` e faz a validação DNS definitiva depois do provisionamento.
-
-## Download da assinatura retorna 404
-
-O Samba publica, para uma versão `X.Y.Z`:
+O release usa:
 
 ```text
 samba-X.Y.Z.tar.gz
 samba-X.Y.Z.tar.asc
 ```
 
-A assinatura é verificada contra o `.tar` descompactado, não contra o `.tar.gz`.
+A assinatura corresponde ao `.tar` descompactado. O installer/upgrader atuais implementam esse fluxo.
 
-O instalador atual já implementa esse fluxo.
-
-## LAM reclama de GMP ou ZIP
-
-Valide:
+## LAM reclama GMP/ZIP
 
 ```bash
 php -m | grep -Ei 'gmp|zip|ldap|openssl'
 ```
 
-O instalador atual trata GMP e ZIP como dependências do LAM e executa autoteste.
+Rocky usa seu provider RPM; Ubuntu usa `php-gmp` e `php-zip`.
+
+## Ubuntu: porta 53 ocupada por systemd-resolved
+
+```bash
+systemctl status systemd-resolved
+ss -lntup | grep ':53 '
+cat /etc/systemd/resolved.conf.d/60-samba-ad.conf
+cat /etc/resolv.conf
+```
+
+Esperado após a preparação:
+
+```text
+DNSStubListener=no
+```
+
+e nenhuma escuta `127.0.0.53:53`/`127.0.0.54:53` competindo com Samba.
+
+## Ubuntu: perdi SSH ao mexer no UFW
+
+O installer tenta preservar portas reportadas por:
+
+```bash
+sshd -T | grep '^port '
+```
+
+Antes de uma instalação remota, confirme o SSH real e revise:
+
+```bash
+ufw status verbose
+```
+
+## Rocky: firewalld
+
+```bash
+firewall-cmd --get-active-zones
+firewall-cmd --list-all
+```
+
+Zonas `trusted`/target `ACCEPT` são recusadas por padrão.
+
+## SELinux
+
+```bash
+getenforce
+ausearch -m AVC -ts recent
+```
+
+## AppArmor
+
+```bash
+aa-status
+journalctl -k | grep -i apparmor
+```
 
 ## Windows não encontra o domínio
 
-Primeiro confirme que o Windows usa somente o DNS do AD.
-
-No cliente:
+No cliente, use somente DNS do AD e valide SRV:
 
 ```cmd
-ipconfig /all
-nslookup dc1.ad.example.com
 nslookup -type=SRV _ldap._tcp.ad.example.com
 nslookup -type=SRV _kerberos._tcp.ad.example.com
 ```
@@ -62,24 +103,14 @@ host -t SRV _ldap._tcp.ad.example.com 127.0.0.1
 host -t SRV _kerberos._udp.ad.example.com 127.0.0.1
 ```
 
-## Kerberos falha
-
-Confira horário:
+## Kerberos
 
 ```bash
 timedatectl
 chronyc tracking
-chronyc sources -v
-```
-
-Depois:
-
-```bash
 kinit Administrator
 klist
 ```
-
-DNS e tempo incorretos são causas frequentes de falha Kerberos.
 
 ## Samba não inicia
 
@@ -89,50 +120,13 @@ journalctl -u samba-ad-dc -n 200 --no-pager
 /opt/samba/bin/samba-tool testparm --suppress-prompt
 ```
 
-Não execute `domain provision` novamente sobre um domínio existente para tentar reparar o serviço.
+Nunca reprovisione sobre um domínio existente como tentativa de reparo.
 
-## Verificar integridade
+## Integridade / FSMO
 
 ```bash
 samba-tool dbcheck --cross-ncs
-```
-
-Não use `--fix` automaticamente. Entenda primeiro os erros reportados e tenha backup.
-
-## Verificar FSMO
-
-```bash
 samba-tool fsmo show
 ```
 
-Em um domínio com um único DC, todos os papéis no mesmo servidor é esperado.
-
-## Ver health-check
-
-```bash
-/usr/local/sbin/samba-ad-health
-journalctl -u samba-ad-health.service
-systemctl list-timers samba-ad-health.timer
-```
-
-## Firewalld
-
-Veja a zona da interface:
-
-```bash
-firewall-cmd --get-active-zones
-firewall-cmd --list-all
-```
-
-O instalador recusa por padrão zonas permissivas como `trusted` ou target `ACCEPT`, pois elas anulam a ideia de restringir serviços por CIDR.
-
-## SELinux
-
-O projeto não desativa SELinux.
-
-```bash
-getenforce
-ausearch -m AVC -ts recent
-```
-
-Antes de criar exceções, determine exatamente qual acesso foi bloqueado.
+Não use `dbcheck --fix` automaticamente.

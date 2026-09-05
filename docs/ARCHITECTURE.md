@@ -1,142 +1,122 @@
 # Arquitetura
 
-## Visão geral
+## Modelo multi-distribuição
 
-O projeto mantém o Samba AD isolado em `/opt/samba`, enquanto serviços auxiliares continuam integrados ao Rocky Linux através de RPMs/systemd.
+A partir do installer 0.6, a lógica foi dividida em três camadas:
 
 ```text
-                           Windows / RSAT
-                                │
-               DNS / Kerberos / LDAP / SMB
-                                │
-                                ▼
-                       Samba AD DC
-                       /opt/samba
-                      ┌────────────┐
-                      │ DNS interno│
-                      │ Kerberos   │
-                      │ LDAP       │
-                      │ SYSVOL     │
-                      │ NETLOGON   │
-                      └────────────┘
-                         │       │
-                  Chrony │       │ LDAPS
-                         │       ▼
-                         │      LAM
-                         │    HTTPS :443
-                         │
-        ┌────────────────┴────────────────┐
-        │                                 │
-    systemd/journal                  health/backup
-                                          │
-                          ┌───────────────┴──────────────┐
-                          │                              │
-                  samba-tool domain backup        config snapshot
-                          │
-                          ▼
-                 /var/backups/samba-ad
-
-        node_exporter                Prometheus
-        127.0.0.1:9100 ───────────► 127.0.0.1:9091
-                                          │
-                                          ▼
-                                      Grafana
-                                     HTTPS :3000
-
-        Cockpit
-        HTTPS :9090
+scripts/install.sh
+       │
+       ├── detecta /etc/os-release
+       │
+       ▼
+scripts/lib/common.sh
+       │
+       ├── Samba/AD
+       ├── provisionamento
+       ├── GPG
+       ├── backup/health
+       ├── LAM/Grafana/Prometheus (orquestração)
+       └── manifesto/resume
+       │
+       └──────── hooks de plataforma ────────┐
+                                             │
+                  ┌──────────────────────────┴─────────────────────────┐
+                  ▼                                                    ▼
+       distro-rocky.sh                                      distro-ubuntu.sh
+       DNF / firewalld                                      APT / UFW
+       SELinux                                              AppArmor
+       httpd                                                apache2
+       NetworkManager                                       systemd-resolved/Netplan
 ```
 
-## Samba
+O objetivo é evitar dois instaladores independentes divergindo ao longo do tempo.
 
-O Samba é compilado do fonte oficial e instalado em:
+## Contrato dos adapters
+
+Cada adapter implementa hooks para:
+
+- validar a plataforma;
+- habilitar repositórios e instalar pacotes;
+- descobrir DNS/rede;
+- verificar mecanismo MAC;
+- detectar pacotes Samba conflitantes;
+- preparar porta 53;
+- configurar resolver;
+- integrar CA/TLS;
+- configurar Chrony/ntp_signd;
+- configurar firewall;
+- instalar Cockpit/LAM/monitoramento/Grafana;
+- executar testes específicos da plataforma.
+
+`tests/platform-detection.sh` valida esse contrato estaticamente.
+
+## Samba AD
+
+O Samba permanece instalado em:
 
 ```text
 /opt/samba
 ```
 
-O serviço principal é:
+com serviço:
 
 ```text
 samba-ad-dc.service
 ```
 
-O instalador registra metadados em:
+A distribuição escolhida não altera o formato do domínio nem a estratégia de upgrade.
+
+## Manifesto
 
 ```text
 /etc/samba-ad/installation.env
 /etc/samba-ad/build-info.txt
 ```
 
-Esses arquivos são consumidos pelo atualizador para preservar os parâmetros de build.
+Além da versão do Samba, a 0.6 registra distribuição, tier, firewall, mecanismo MAC e hashes do wrapper, biblioteca comum e adapter. O upgrader usa esses metadados sem apagar chaves que não conhece.
 
 ## DNS
 
-A implementação inicial usa:
+Backend inicial:
 
 ```text
 SAMBA_INTERNAL
 ```
 
-O DNS forwarder é configurado no Samba para consultas externas. Clientes Windows do domínio devem usar o(s) DNS do AD, e não DNS público diretamente.
+Rocky integra o resolver via NetworkManager. Ubuntu desativa o stub DNS do `systemd-resolved`, mantendo o serviço e usando o DC diretamente em `/etc/resolv.conf` após o provisionamento.
 
-BIND9_DLZ não faz parte do escopo inicial.
+## Segurança da plataforma
 
-## Portas
+```text
+Rocky 10  -> SELinux + firewalld
+Ubuntu    -> AppArmor + UFW
+```
 
-Portas típicas do AD são liberadas somente para `CLIENT_CIDRS`. As interfaces administrativas são limitadas a `MGMT_CIDRS`.
+Nenhum adapter desativa deliberadamente o mecanismo MAC para "fazer funcionar".
 
-Serviços locais:
+## Observabilidade
 
-| Serviço | Bind |
-|---|---|
-| Prometheus | `127.0.0.1:9091` |
-| node_exporter | `127.0.0.1:9100` |
-
-Interfaces administrativas:
-
-| Serviço | Porta |
-|---|---:|
-| HTTPS/LAM | 443 |
-| Cockpit | 9090 |
-| Grafana | 3000 |
-
-As portas do AD incluem DNS, Kerberos, LDAP, SMB, Global Catalog e faixa RPC dinâmica. Consulte o `scripts/install.sh` para a lista efetivamente aplicada.
-
-## TLS
-
-LAM e Grafana usam um certificado administrativo self-signed criado durante a instalação. O Samba também gera material TLS próprio para LDAPS.
-
-Em produção, considere substituir o certificado administrativo por uma CA corporativa ou outra cadeia confiável.
-
-## Backups
-
-Dois conceitos são separados:
-
-1. **Backup lógico/consistente do domínio**, via `samba-tool domain backup`.
-2. **Snapshot de rollback do prefixo**, usado pelo atualizador durante uma janela de manutenção.
-
-BorgBackup e Restic são instalados, mas o destino remoto não é configurado automaticamente.
+```text
+node_exporter 127.0.0.1:9100
+          │
+          ▼
+Prometheus 127.0.0.1:9091
+          │
+          ▼
+Grafana HTTPS :3000
+```
 
 ## Upgrade
 
-O build da nova versão ocorre com o DC online. A janela de indisponibilidade começa somente após:
-
-- download;
-- GPG;
-- `configure`;
-- `make`;
-- `dbcheck`;
-- backup do AD.
-
-Na janela crítica:
+O `scripts/upgrade.sh` é propositalmente pouco dependente da distribuição. Ele lê o manifesto, compila em usuário sem privilégios e só precisa de root para snapshot/instalação/restart.
 
 ```text
-stop Samba
+build online
+→ dbcheck + backup AD
+→ stop Samba
 → snapshot consistente /opt/samba
 → make install
-→ testparm
-→ start Samba
+→ testparm/start
+→ pós-checks
 ```
-
-Se a instalação/start falhar antes de o novo serviço ficar estável, o script tenta restaurar o snapshot anterior.
