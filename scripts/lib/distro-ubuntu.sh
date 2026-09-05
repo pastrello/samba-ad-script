@@ -228,6 +228,66 @@ ubuntu_disable_systemd_resolved_for_dc() {
     ok "systemd-resolved desativado de forma controlada; porta 53 liberada para o Samba."
 }
 
+ubuntu_port53_listeners() {
+    ss -H -lntup 2>/dev/null | awk '$5 ~ /:53$/ {print}' || true
+}
+
+ubuntu_resolved_port53_listeners() {
+    ubuntu_port53_listeners | grep -E 'systemd-resolv' || true
+}
+
+ubuntu_write_resolv_conf() {
+    local dns_server="$1"
+    local search_domain="${2:-}"
+
+    rm -f /etc/resolv.conf
+    {
+        if [[ -n "$search_domain" ]]; then
+            printf 'search %s
+' "$search_domain"
+        fi
+        printf 'nameserver %s
+' "$dns_server"
+    } >/etc/resolv.conf
+    chmod 644 /etc/resolv.conf
+}
+
+ubuntu_resolved_is_masked() {
+    [[ "$(systemctl is-enabled systemd-resolved.service 2>/dev/null || true)" == "masked" ]]
+}
+
+ubuntu_disable_systemd_resolved_for_dc() {
+    local dns_server="$1"
+    local search_domain="${2:-}"
+    local listeners
+
+    warn "systemd-resolved continuou ocupando a porta 53; aplicando fallback controlado para DC dedicado."
+    warn "O serviço será parado e mascarado; /etc/resolv.conf ficará sob controle do samba-ad-script."
+
+    mkdir -p /etc/samba-ad
+
+    if ! systemctl mask --now systemd-resolved.service >/dev/null 2>&1; then
+        systemctl stop systemd-resolved.service 2>/dev/null || true
+        systemctl disable systemd-resolved.service >/dev/null 2>&1 || true
+        systemctl mask systemd-resolved.service >/dev/null 2>&1 || \
+            die "Não foi possível mascarar systemd-resolved."
+    fi
+
+    sleep 1
+    listeners="$(ubuntu_port53_listeners)"
+    if [[ -n "$listeners" ]]; then
+        printf '%s
+' "$listeners" >&2
+        die "A porta 53 continua ocupada após parar systemd-resolved."
+    fi
+
+    ubuntu_write_resolv_conf "$dns_server" "$search_domain"
+    printf '%s
+' "$(date -Is)" >/etc/samba-ad/systemd-resolved.disabled-by-samba-ad-script
+    chmod 600 /etc/samba-ad/systemd-resolved.disabled-by-samba-ad-script
+    ok "systemd-resolved desativado de forma controlada; porta 53 liberada para o Samba."
+}
+
 distro_prepare_dns_port() {
     info "Preparando porta 53 no Ubuntu"
 
