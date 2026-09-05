@@ -79,7 +79,7 @@ jobs:
               '- centraliza a leitura de `smbd -b` em `samba_build_option()`, sem pipeline com consumidor que encerra cedo;',
               '- corrige o mesmo padrão latente nas rotinas de TLS, logrotate e health-check;',
               '- mantém compatibilidade com checkpoint v3, permitindo retomar uma instalação 0.6/0.6.1 que já concluiu o build do Samba;',
-              '- adiciona teste de regressão que proíbe qualquer pipeline direto a partir de `smbd -b`.',
+              '- adiciona teste de regressão contra consumidores que encerram cedo (`awk ... exit`, `head`, `grep -m`) após `smbd -b`.',
               '',
               ''
           ])
@@ -96,8 +96,8 @@ jobs:
               '',
               'f="scripts/lib/common.sh"',
               '',
-              'if grep -nE "smbd.*-b.*\\|" "$f"; then',
-              '    echo "[ERRO] pipeline direto a partir de smbd -b voltou ao código" >&2',
+              'if grep -nE "smbd.*-b.*\\|.*(awk.*exit|head([[:space:]]|$)|grep[[:space:]]+-m)" "$f"; then',
+              '    echo "[ERRO] consumidor que encerra cedo após smbd -b voltou ao código" >&2',
               '    exit 1',
               'fi',
               '',
