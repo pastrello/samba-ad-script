@@ -25,7 +25,14 @@ jobs:
             echo "Payload already assembled; nothing to do."
             exit 0
           fi
+
           cat .v06-payload/part* | base64 -d | tar -xz
+
+          # GitHub Apps without workflows permission cannot modify workflow files.
+          # Keep the existing validation workflow for this assembly commit; it is
+          # updated separately by the repository connector after assembly.
+          git checkout -- .github/workflows/validate.yml
+
           rm -rf .v06-payload
           chmod +x scripts/install.sh scripts/upgrade.sh tests/platform-detection.sh
 
