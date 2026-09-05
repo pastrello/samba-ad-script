@@ -61,6 +61,13 @@ jobs:
           chmod +x tests/grafana-provisioning-permissions.sh
           ./tests/grafana-provisioning-permissions.sh
 
+      - name: Grafana CLI path contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tests/grafana-cli-path.sh
+          ./tests/grafana-cli-path.sh
+
       - name: Ensure LF shell scripts
         shell: bash
         run: |
