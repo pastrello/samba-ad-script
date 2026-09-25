@@ -35,8 +35,8 @@ start = s.index("distro_configure_lam_webserver() {")
 end = s.index("distro_install_monitoring_packages() {", start)
 block = s[start:end]
 
-assert block.index('mv -f "$stock_ssl_conf" "$stock_ssl_disabled"') < block.index("httpd -t")
-assert block.index("Listen 443 https") < block.index("httpd -t")
+assert block.index('mv -f "$stock_ssl_conf" "$stock_ssl_disabled"') < block.index("\n    httpd -t\n")
+assert block.index("Listen 443 https") < block.index("\n    httpd -t\n")
 assert "/etc/pki/tls/certs/localhost.crt" in block
 PY
 
