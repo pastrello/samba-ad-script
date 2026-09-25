@@ -39,6 +39,13 @@ jobs:
           chmod +x tests/ubuntu-resolver-contract.sh
           ./tests/ubuntu-resolver-contract.sh
 
+      - name: Rocky Apache TLS contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tests/rocky-httpd-tls-contract.sh
+          ./tests/rocky-httpd-tls-contract.sh
+
       - name: Pipefail safety contract
         shell: bash
         run: |
