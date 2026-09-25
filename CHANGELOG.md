@@ -2,6 +2,16 @@
 
 Este projeto está em fase pré-1.0. Installer e upgrader possuem versões independentes.
 
+## Installer 0.6.6 — 2026-09-25
+
+### Fixed
+- corrige a falha do Apache/httpd no Rocky Linux 10 quando o `mod_ssl` instala `/etc/httpd/conf.d/ssl.conf` apontando para um `/etc/pki/tls/certs/localhost.crt` inexistente;
+- preserva a configuração TLS padrão original como `ssl.conf.samba-ad-original`, retira o VirtualHost padrão da carga do Apache e deixa o HTTPS do host dedicado sob controle do VirtualHost do LAM;
+- declara explicitamente `Listen 443 https` na configuração gerenciada pelo instalador;
+- remove a tentativa de instalar o pacote inexistente `php-curl` no Rocky 10, eliminando um aviso enganoso; o pacote `php-common` continua sendo instalado normalmente;
+- adiciona teste de regressão do contrato Apache/TLS do adapter Rocky;
+- mantém `STATE_FORMAT_VERSION=3`, permitindo retomar instalações 0.6.5 interrompidas na etapa LAM sem recompilar ou reprovisionar o AD.
+
 ## Installer 0.6.5 — 2026-09-05
 
 ### Fixed
