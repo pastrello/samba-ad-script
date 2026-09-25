@@ -311,15 +311,32 @@ distro_install_lam_packages() {
         php-gmp php-pecl-zip php-intl
     )
     install_pkg_list_required "${packages[@]}"
-    install_pkg_optional php-curl
     install_pkg_optional php-process
 }
 
 distro_configure_lam_webserver() {
     local fqdn="$1" cert="$2" key="$3"
+    local stock_ssl_conf="/etc/httpd/conf.d/ssl.conf"
+    local stock_ssl_backup="/etc/httpd/conf.d/ssl.conf.samba-ad-original"
+    local stock_ssl_disabled="/etc/httpd/conf.d/ssl.conf.disabled-by-samba-ad"
+
+    # mod_ssl instala um VirtualHost TLS padrão que pode apontar para
+    # /etc/pki/tls/certs/localhost.crt. Em Rocky 10 esse certificado pode não
+    # existir, fazendo "httpd -t" falhar mesmo que o VirtualHost do LAM tenha
+    # certificado próprio. Este host é dedicado e o samba-ad-script gerencia
+    # HTTPS, portanto preservamos a configuração original e retiramos o
+    # VirtualHost padrão da carga do Apache.
+    if [[ -f "$stock_ssl_conf" ]]; then
+        if [[ ! -e "$stock_ssl_backup" ]]; then
+            cp -a "$stock_ssl_conf" "$stock_ssl_backup"
+        fi
+        mv -f "$stock_ssl_conf" "$stock_ssl_disabled"
+        ok "Configuração TLS padrão do mod_ssl preservada e desativada; HTTPS será gerenciado pelo LAM."
+    fi
 
     rm -f /etc/httpd/conf.d/lam.conf
     cat >/etc/httpd/conf.d/00-samba-ad-lam.conf <<EOF
+Listen 443 https
 ServerName ${fqdn}
 
 <VirtualHost *:80>
